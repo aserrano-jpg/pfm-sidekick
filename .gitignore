@@ -1,0 +1,19 @@
+# Credentials - never commit these
+agents/config.yaml
+.streamlit/secrets.toml
+client_secret*.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# OS
+.DS_Store
+*.swp
+
+# Temp
+tmp/
+*.parquet
+.streamlit/secrets.toml

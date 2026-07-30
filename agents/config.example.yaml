@@ -1,0 +1,17 @@
+# Example configuration for BPS Impression Share Agent
+google_ads:
+  developer_token: "REPLACE_ME"
+  login_customer_id: "REPLACE_ME" # MCC customer id
+  client_customer_ids:
+    - "123-456-7890"
+
+databricks:
+  host: "https://<workspace>.cloud.databricks.com"
+  http_path: "/sql/1.0/endpoints/<id>"
+  access_token: "REPLACE_ME"
+  view_name: "bps_impression_share_view"
+
+local_output_dir: ./tmp/bps_output
+
+# thresholds
+min_impressions: 100  # ignore campaigns with fewer impressions than this by default

@@ -1,0 +1,158 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SocratesExport",
+  "description": "Schema for Socrates query results exported for ingestion by mbr_insights_agent.py. All fields optional except where noted. Spend values are directional.",
+  "type": "object",
+  "properties": {
+    "bd1_6_actuals": {
+      "type": ["number", "null"],
+      "description": "BD1to6AI actuals for the reporting period. Fractional (e.g. 0.72) or whole number depending on product. Source: MBR-3 or MBR-1."
+    },
+    "bd1_6_target": {
+      "type": ["number", "null"],
+      "description": "BD1to6AI OKR target for the reporting period. Typically set in Atlas KR or shown on Optimal deck. Source: deck or Atlas."
+    },
+    "bd1_6_prior_period": {
+      "type": ["number", "null"],
+      "description": "BD1to6AI actuals from the prior period (prior month for MBR, prior week for TOFU). Used to compute MoM or WoW delta."
+    },
+    "spend": {
+      "type": ["number", "null"],
+      "description": "Total media spend for the period in USD. Directional only; mark as approximate when presenting. Source: MBR-1 or TW-1."
+    },
+    "cac": {
+      "type": ["number", "null"],
+      "description": "Customer acquisition cost in USD for the period. Source: Optimal deck or derived from spend / bd1_6_actuals."
+    },
+    "ltv_to_cac_ratio": {
+      "type": ["number", "null"],
+      "description": "LTV to CAC ratio as a multiplier (e.g. 35.0 means LTV is 35x CAC). Source: Optimal deck."
+    },
+    "cpbd1_6": {
+      "type": ["number", "null"],
+      "description": "Cost per BD1-6 in USD (spend / bd1_6_actuals). Source: MBR-1 or TW-1 derived column cpbd1_6_per_k divided by 1000."
+    },
+    "paid_share": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Paid channel share of total BD1-6 as a fraction (e.g. 0.72 = 72%). Source: MBR-4 or TW-3."
+    },
+    "organic_share": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Organic channel share of total BD1-6 as a fraction. If omitted, agent derives as 1 - paid_share. Source: MBR-4 or TW-3."
+    },
+    "data_lag_flag": {
+      "type": "boolean",
+      "default": false,
+      "description": "Set to true if the query results include data from the last 7 days, which will be understated due to BD1-6 bake lag. Agent will surface a warning in output."
+    },
+    "channels": {
+      "type": "array",
+      "description": "Per-channel breakdown. Include all material channels. Source: MBR-1 (paid) or TW-2 (all channels).",
+      "items": {
+        "$ref": "#/definitions/ChannelRow"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "ChannelRow": {
+      "type": "object",
+      "required": ["channel"],
+      "properties": {
+        "channel": {
+          "type": "string",
+          "description": "Exact channel string as it appears in Socrates. Use verified channel strings from paid.md or gtm.md.",
+          "examples": [
+            "Paid Search",
+            "Paid Social",
+            "Display",
+            "Video",
+            "Organic Search",
+            "Direct",
+            "Email",
+            "Referral"
+          ]
+        },
+        "bd1_6": {
+          "type": ["number", "null"],
+          "description": "BD1to6AI volume for this channel in the period."
+        },
+        "spend": {
+          "type": ["number", "null"],
+          "description": "Media spend for this channel in USD. Directional. Null for organic channels."
+        },
+        "cpbd1_6": {
+          "type": ["number", "null"],
+          "description": "Cost per BD1-6 for this channel in USD. Null for organic channels."
+        },
+        "wow_delta": {
+          "type": ["number", "null"],
+          "description": "Week-over-week change in BD1-6 as a fraction (e.g. 0.05 = +5%). Use for TOFU weekly reports."
+        },
+        "mom_delta": {
+          "type": ["number", "null"],
+          "description": "Month-over-month change in BD1-6 as a fraction (e.g. -0.03 = -3%). Use for MBR reports."
+        },
+        "share_of_total": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1,
+          "description": "This channel's share of total BD1-6 as a fraction (e.g. 0.45 = 45%)."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "examples": [
+    {
+      "bd1_6_actuals": 0.72,
+      "bd1_6_target": 0.70,
+      "bd1_6_prior_period": 0.65,
+      "spend": 1500000,
+      "cac": 72.0,
+      "ltv_to_cac_ratio": 35.0,
+      "cpbd1_6": 208.33,
+      "paid_share": 0.72,
+      "organic_share": 0.28,
+      "data_lag_flag": false,
+      "channels": [
+        {
+          "channel": "Paid Search",
+          "bd1_6": 450,
+          "spend": 800000,
+          "cpbd1_6": 177.78,
+          "mom_delta": 0.08,
+          "share_of_total": 0.45
+        },
+        {
+          "channel": "Paid Social",
+          "bd1_6": 270,
+          "spend": 400000,
+          "cpbd1_6": 148.15,
+          "mom_delta": 0.03,
+          "share_of_total": 0.27
+        },
+        {
+          "channel": "Organic Search",
+          "bd1_6": 180,
+          "spend": null,
+          "cpbd1_6": null,
+          "mom_delta": -0.02,
+          "share_of_total": 0.18
+        },
+        {
+          "channel": "Direct",
+          "bd1_6": 100,
+          "spend": null,
+          "cpbd1_6": null,
+          "mom_delta": 0.01,
+          "share_of_total": 0.10
+        }
+      ]
+    }
+  ]
+}
