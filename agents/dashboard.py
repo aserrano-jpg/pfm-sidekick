@@ -379,6 +379,122 @@ def fetch_nontmp_weekly(start_date, end_date):
 
 
 @st.cache_data(ttl=3600)
+def fetch_nontmp_monthly(start_date, end_date):
+    """nonTMP (Brand-General) monthly aggregated IS, spend, clicks, lost IS.
+
+    IS pulled at ad_group level (client-side filter to S:brand-general).
+    Lost IS pulled at campaign level from S:brand-trademark campaigns, merged by month.
+    """
+    # ── Step 1: IS at ad_group level ──
+    ag_rows = run_query(f"""
+        SELECT segments.month, ad_group.name,
+               metrics.search_impression_share,
+               metrics.impressions, metrics.clicks, metrics.cost_micros
+        FROM ad_group
+        WHERE segments.date BETWEEN '{start_date}' AND '{end_date}'
+        AND metrics.impressions > 0
+        ORDER BY segments.month
+    """)
+    agg_is = defaultdict(lambda: {"is_w": 0.0, "imp": 0, "clicks": 0, "cost": 0.0})
+    for r in ag_rows:
+        name = r.ad_group.name
+        if "S:brand-general" not in name or "trello" in name.lower():
+            continue
+        m = r.segments.month[:7]
+        imp = r.metrics.impressions
+        is_v = r.metrics.search_impression_share or 0
+        if is_v > 0 and imp > 0:
+            agg_is[m]["is_w"] += is_v * imp
+            agg_is[m]["imp"] += imp
+        agg_is[m]["clicks"] += r.metrics.clicks
+        agg_is[m]["cost"] += r.metrics.cost_micros / 1_000_000
+
+    # ── Step 2: Lost IS at campaign level ──
+    camp_rows = run_query(f"""
+        SELECT segments.month,
+               metrics.search_budget_lost_impression_share,
+               metrics.search_rank_lost_impression_share,
+               metrics.impressions
+        FROM campaign
+        WHERE segments.date BETWEEN '{start_date}' AND '{end_date}'
+        AND campaign.name LIKE '%S:brand-trademark%'
+        AND campaign.name NOT LIKE '%trello%'
+        AND metrics.impressions > 0
+        ORDER BY segments.month
+    """)
+    agg_lost = defaultdict(lambda: {"budget_w": 0.0, "rank_w": 0.0, "imp": 0})
+    for r in camp_rows:
+        m = r.segments.month[:7]
+        imp = r.metrics.impressions
+        bud_v = r.metrics.search_budget_lost_impression_share or 0
+        rank_v = r.metrics.search_rank_lost_impression_share or 0
+        if imp > 0:
+            agg_lost[m]["budget_w"] += bud_v * imp
+            agg_lost[m]["rank_w"] += rank_v * imp
+            agg_lost[m]["imp"] += imp
+
+    # ── Step 3: Merge ──
+    all_months = sorted(set(list(agg_is.keys()) + list(agg_lost.keys())))
+    records = []
+    for m in all_months:
+        d_is = agg_is.get(m, {"is_w": 0.0, "imp": 0, "clicks": 0, "cost": 0.0})
+        d_lost = agg_lost.get(m, {"budget_w": 0.0, "rank_w": 0.0, "imp": 0})
+        is_pct = round(d_is["is_w"] / d_is["imp"] * 100, 1) if d_is["imp"] > 0 else 0
+        bud_pct = round(d_lost["budget_w"] / d_lost["imp"] * 100, 1) if d_lost["imp"] > 0 else 0
+        rank_pct = round(d_lost["rank_w"] / d_lost["imp"] * 100, 1) if d_lost["imp"] > 0 else 0
+        records.append({
+            "Month": m,
+            "Spend": round(d_is["cost"]),
+            "Clicks": d_is["clicks"],
+            "IS": is_pct,
+            "Lost_Budget": bud_pct,
+            "Lost_Rank": rank_pct,
+        })
+    return pd.DataFrame(records)
+
+
+@st.cache_data(ttl=3600)
+def fetch_tmp_monthly_by_keyword(start_date, end_date):
+    """TMP monthly IS/spend/clicks broken out by keyword text (exact match)."""
+    rows = run_query(f"""
+        SELECT segments.month,
+               ad_group_criterion.keyword.text,
+               metrics.search_impression_share,
+               metrics.impressions, metrics.clicks, metrics.cost_micros
+        FROM keyword_view
+        WHERE segments.date BETWEEN '{start_date}' AND '{end_date}'
+        AND campaign.name LIKE '%S:brand-trademark%'
+        AND campaign.name NOT LIKE '%trello%'
+        AND ad_group.name LIKE '%Brand-Trademark%'
+        AND ad_group_criterion.keyword.match_type = 'EXACT'
+        AND metrics.impressions > 0
+        ORDER BY segments.month
+    """)
+    agg = defaultdict(lambda: defaultdict(lambda: {"is_w": 0.0, "imp": 0, "clicks": 0, "cost": 0.0}))
+    for r in rows:
+        m = r.segments.month[:7]
+        kw = r.ad_group_criterion.keyword.text
+        imp = r.metrics.impressions
+        is_v = r.metrics.search_impression_share or 0
+        if is_v > 0 and imp > 0:
+            agg[m][kw]["is_w"] += is_v * imp
+            agg[m][kw]["imp"] += imp
+        agg[m][kw]["clicks"] += r.metrics.clicks
+        agg[m][kw]["cost"] += r.metrics.cost_micros / 1_000_000
+    records = []
+    for m in sorted(agg.keys()):
+        for kw, d in agg[m].items():
+            records.append({
+                "Month": m,
+                "Keyword": kw,
+                "Spend": round(d["cost"]),
+                "Clicks": d["clicks"],
+                "IS": round(weighted_is(d), 1),
+            })
+    return pd.DataFrame(records)
+
+
+@st.cache_data(ttl=3600)
 def fetch_daily_tmp(start_date, end_date):
     """TMP daily: IS, spend, clicks."""
     rows = run_query(f"""
@@ -499,9 +615,10 @@ st.sidebar.markdown("Google Ads API | All geos | Excl. Trello")
 view = st.sidebar.radio("View", [
     "1. MoM TMP Overview",
     "2. WoW Daily TMP",
-    "3. nonTMP Pulse",
-    "4. IS by Geo",
-    "5. YoY Comparison",
+    "3. nonTMP Monthly",
+    "4. nonTMP Pulse",
+    "5. IS by Geo",
+    "6. YoY Comparison",
 ])
 
 today = datetime.today()
@@ -514,17 +631,21 @@ elif view == "2. WoW Daily TMP":
     start = st.sidebar.date_input("Start", value=today - timedelta(days=28))
     end = st.sidebar.date_input("End", value=today)
 
-elif view == "3. nonTMP Pulse":
+elif view == "3. nonTMP Monthly":
+    start = st.sidebar.date_input("Start", value=today - timedelta(days=395))
+    end = st.sidebar.date_input("End", value=today)
+
+elif view == "4. nonTMP Pulse":
     start = st.sidebar.date_input("Start", value=today - timedelta(days=28))
     end = st.sidebar.date_input("End", value=today)
 
-elif view == "4. IS by Geo":
+elif view == "5. IS by Geo":
     start = st.sidebar.date_input("Start", value=today - timedelta(days=395))
     end = st.sidebar.date_input("End", value=today)
     geo_options = ["US", "UK", "AU", "IN", "ROW", "ES"]
     selected_geos = st.sidebar.multiselect("Geos", geo_options, default=geo_options)
 
-elif view == "5. YoY Comparison":
+elif view == "6. YoY Comparison":
     st.sidebar.markdown("**FY26 range:**")
     fy26_start = st.sidebar.date_input("FY26 Start", value=datetime(2025, 6, 1))
     fy26_end = st.sidebar.date_input("FY26 End", value=datetime(2026, 1, 31))
@@ -546,11 +667,41 @@ if view == "1. MoM TMP Overview":
     st.subheader("MoM TMP (Brand-Trademark) Overview")
     st.caption("Exact match keywords | All geos | Excl. Trello")
 
-    with st.spinner("Pulling TMP monthly data..."):
-        df = fetch_tmp_monthly(start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"))
+    with st.spinner("Pulling TMP keyword data..."):
+        kw_df = fetch_tmp_monthly_by_keyword(start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"))
+
+    if kw_df.empty:
+        st.warning("No data for this range.")
+        st.stop()
+
+    # Keyword filter in sidebar
+    all_keywords = sorted(kw_df["Keyword"].unique().tolist())
+    selected_kws = st.sidebar.multiselect(
+        "Filter by keyword",
+        options=all_keywords,
+        default=all_keywords,
+        help="Filter TMP charts to specific exact-match keywords",
+    )
+    if selected_kws:
+        kw_df = kw_df[kw_df["Keyword"].isin(selected_kws)]
+
+    # Roll up to monthly totals (weighted IS) after keyword filter
+    def rollup_kw(kdf):
+        records = []
+        for m, grp in kdf.groupby("Month"):
+            total_imp = grp["Clicks"].sum()  # use clicks as proxy weight for display
+            records.append({
+                "Month": m,
+                "Spend": grp["Spend"].sum(),
+                "Clicks": grp["Clicks"].sum(),
+                "IS": round(grp["IS"].mean(), 1),  # simple avg across filtered kws
+            })
+        return pd.DataFrame(records).sort_values("Month")
+
+    df = rollup_kw(kw_df)
 
     if df.empty:
-        st.warning("No data for this range.")
+        st.warning("No data for selected keywords.")
         st.stop()
 
     # KPI cards
@@ -565,21 +716,34 @@ if view == "1. MoM TMP Overview":
               f"{((latest['Clicks'] - prev['Clicks']) / prev['Clicks'] * 100):+.0f}% MoM")
     c4.metric("Months of data", len(df))
 
-    # IS trend
-    fig_is = px.line(df, x="Month", y="IS", markers=True,
-                     title="Monthly Search IS (%)",
-                     color_discrete_sequence=[COLORS["TMP"]])
-    fig_is.update_layout(yaxis_range=[0, 100], hovermode="x unified")
-    fig_is.add_hline(y=88, line_dash="dot", line_color="gray",
-                     annotation_text="FY26 avg (88%)", annotation_position="top left")
-    st.plotly_chart(fig_is, use_container_width=True)
-
-    # Spend bar
-    fig_spend = px.bar(df, x="Month", y="Spend",
-                       title="Monthly Spend ($)",
-                       color_discrete_sequence=[COLORS["TMP"]])
-    fig_spend.update_layout(hovermode="x unified")
-    st.plotly_chart(fig_spend, use_container_width=True)
+    # IS over Spend: dual-axis combo chart
+    fig_is_spend = go.Figure()
+    fig_is_spend.add_trace(go.Bar(
+        x=df["Month"], y=df["Spend"],
+        name="Spend ($)",
+        marker_color="rgba(59,130,246,0.35)",
+        yaxis="y2",
+    ))
+    fig_is_spend.add_trace(go.Scatter(
+        x=df["Month"], y=df["IS"],
+        name="IS (%)",
+        mode="lines+markers",
+        line=dict(color=COLORS["TMP"], width=3),
+        marker=dict(size=7),
+        yaxis="y1",
+    ))
+    fig_is_spend.add_hline(y=88, line_dash="dot", line_color="gray",
+                           annotation_text="FY26 avg (88%)",
+                           annotation_position="top left",
+                           yref="y1")
+    fig_is_spend.update_layout(
+        title="Monthly TMP IS (%) vs Spend ($)",
+        hovermode="x unified",
+        yaxis=dict(title="IS (%)", range=[0, 100], side="left"),
+        yaxis2=dict(title="Spend ($)", overlaying="y", side="right", showgrid=False),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    )
+    st.plotly_chart(fig_is_spend, use_container_width=True)
 
     # Clicks line
     fig_clicks = px.line(df, x="Month", y="Clicks", markers=True,
@@ -632,6 +796,29 @@ if view == "1. MoM TMP Overview":
 
         with st.expander("BD1-6 Raw data"):
             st.dataframe(sdf, use_container_width=True)
+
+    # Keyword IS breakdown table
+    st.markdown("---")
+    st.markdown("#### IS by Keyword (latest month)")
+    latest_kw_month = kw_df["Month"].max()
+    kw_latest = (
+        kw_df[kw_df["Month"] == latest_kw_month]
+        .sort_values("IS", ascending=False)
+        [["Keyword", "IS", "Spend", "Clicks"]]
+        .reset_index(drop=True)
+    )
+    kw_display = kw_latest.copy()
+    kw_display["IS"] = kw_display["IS"].apply(lambda x: f"{x}%")
+    kw_display["Spend"] = kw_display["Spend"].apply(lambda x: f"${x:,}")
+    kw_display["Clicks"] = kw_display["Clicks"].apply(lambda x: f"{x:,}")
+    st.caption(f"Latest month: {latest_kw_month} | Exact match | Sorted by IS desc")
+    st.dataframe(kw_display, use_container_width=True, hide_index=True)
+
+    with st.expander("All months keyword data"):
+        st.dataframe(
+            kw_df.sort_values(["Month", "IS"], ascending=[True, False]),
+            use_container_width=True, hide_index=True,
+        )
 
     with st.expander("Google Ads Raw data"):
         st.dataframe(df, use_container_width=True)
@@ -729,9 +916,92 @@ elif view == "2. WoW Daily TMP":
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# VIEW 3: nonTMP Pulse
+# VIEW 3: nonTMP Monthly
 # ────────────────────────────────────────────────────────────────────────────
-elif view == "3. nonTMP Pulse":
+elif view == "3. nonTMP Monthly":
+    st.subheader("nonTMP (Brand-General) Monthly Overview")
+    st.caption("All match types | All geos | Excl. Trello | Lost IS at campaign level")
+
+    with st.spinner("Pulling nonTMP monthly data..."):
+        df = fetch_nontmp_monthly(start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"))
+
+    if df.empty:
+        st.warning("No data for this range.")
+        st.stop()
+
+    # KPI cards
+    latest = df.iloc[-1]
+    prev = df.iloc[-2] if len(df) > 1 else latest
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("IS (latest)", f"{latest['IS']}%",
+              f"{latest['IS'] - prev['IS']:+.1f}pp MoM")
+    c2.metric("Spend (latest)", f"${latest['Spend']:,}",
+              f"{((latest['Spend'] - prev['Spend']) / max(prev['Spend'], 1) * 100):+.0f}% MoM")
+    c3.metric("Clicks (latest)", f"{latest['Clicks']:,}",
+              f"{((latest['Clicks'] - prev['Clicks']) / max(prev['Clicks'], 1) * 100):+.0f}% MoM")
+    c4.metric("Lost (Budget)", f"{latest['Lost_Budget']}%",
+              f"{latest['Lost_Budget'] - prev['Lost_Budget']:+.1f}pp")
+    c5.metric("Lost (Rank)", f"{latest['Lost_Rank']}%",
+              f"{latest['Lost_Rank'] - prev['Lost_Rank']:+.1f}pp")
+
+    # IS over Spend: dual-axis combo chart
+    fig_is_spend = go.Figure()
+    fig_is_spend.add_trace(go.Bar(
+        x=df["Month"], y=df["Spend"],
+        name="Spend ($)",
+        marker_color="rgba(239,122,58,0.35)",
+        yaxis="y2",
+    ))
+    fig_is_spend.add_trace(go.Scatter(
+        x=df["Month"], y=df["IS"],
+        name="IS (%)",
+        mode="lines+markers",
+        line=dict(color=COLORS["nonTMP"], width=3),
+        marker=dict(size=7),
+        yaxis="y1",
+    ))
+    fig_is_spend.update_layout(
+        title="Monthly nonTMP IS (%) vs Spend ($)",
+        hovermode="x unified",
+        yaxis=dict(title="IS (%)", range=[0, 100], side="left"),
+        yaxis2=dict(title="Spend ($)", overlaying="y", side="right", showgrid=False),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    )
+    st.plotly_chart(fig_is_spend, use_container_width=True)
+
+    # Lost IS stacked bar
+    fig_lost = go.Figure()
+    fig_lost.add_trace(go.Bar(
+        x=df["Month"], y=df["Lost_Budget"],
+        name="Lost IS (Budget)", marker_color="#F4A261"))
+    fig_lost.add_trace(go.Bar(
+        x=df["Month"], y=df["Lost_Rank"],
+        name="Lost IS (Rank)", marker_color="#E76F51"))
+    fig_lost.add_trace(go.Bar(
+        x=df["Month"], y=df["IS"],
+        name="IS Won", marker_color=COLORS["nonTMP"]))
+    fig_lost.update_layout(
+        barmode="stack",
+        title="Monthly IS Breakdown: Won vs Lost (Budget vs Rank)",
+        yaxis_range=[0, 100], hovermode="x unified",
+        yaxis_title="% of eligible impressions")
+    st.plotly_chart(fig_lost, use_container_width=True)
+
+    # Clicks line
+    fig_clicks = px.line(df, x="Month", y="Clicks", markers=True,
+                         title="Monthly Clicks - nonTMP",
+                         color_discrete_sequence=[COLORS["nonTMP"]])
+    fig_clicks.update_layout(hovermode="x unified")
+    st.plotly_chart(fig_clicks, use_container_width=True)
+
+    with st.expander("Raw data"):
+        st.dataframe(df, use_container_width=True)
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# VIEW 4: nonTMP Pulse
+# ────────────────────────────────────────────────────────────────────────────
+elif view == "4. nonTMP Pulse":
     st.subheader("nonTMP (Brand-General) Pulse")
     st.caption("All match types | All geos | Excl. Trello | Campaign level for Lost IS")
     st.markdown("""
@@ -763,12 +1033,30 @@ elif view == "3. nonTMP Pulse":
         c5.metric("Lost (Rank)", f"{curr['Lost_Rank']}%",
                   f"{curr['Lost_Rank'] - prev['Lost_Rank']:+.1f}pp")
 
-    # IS trend
-    fig_is = px.line(df, x="Week", y="IS", markers=True,
-                     title="Weekly Search IS (%) - nonTMP",
-                     color_discrete_sequence=[COLORS["nonTMP"]])
-    fig_is.update_layout(yaxis_range=[0, 100], hovermode="x unified")
-    st.plotly_chart(fig_is, use_container_width=True)
+    # IS over Spend: dual-axis combo chart
+    fig_is_spend_w = go.Figure()
+    fig_is_spend_w.add_trace(go.Bar(
+        x=df["Week"], y=df["Spend"],
+        name="Spend ($)",
+        marker_color="rgba(239,122,58,0.35)",
+        yaxis="y2",
+    ))
+    fig_is_spend_w.add_trace(go.Scatter(
+        x=df["Week"], y=df["IS"],
+        name="IS (%)",
+        mode="lines+markers",
+        line=dict(color=COLORS["nonTMP"], width=3),
+        marker=dict(size=7),
+        yaxis="y1",
+    ))
+    fig_is_spend_w.update_layout(
+        title="Weekly nonTMP IS (%) vs Spend ($)",
+        hovermode="x unified",
+        yaxis=dict(title="IS (%)", range=[0, 100], side="left"),
+        yaxis2=dict(title="Spend ($)", overlaying="y", side="right", showgrid=False),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    )
+    st.plotly_chart(fig_is_spend_w, use_container_width=True)
 
     # Lost IS stacked bar
     fig_lost = go.Figure()
@@ -787,21 +1075,14 @@ elif view == "3. nonTMP Pulse":
         yaxis_title="% of eligible impressions")
     st.plotly_chart(fig_lost, use_container_width=True)
 
-    # Spend bar
-    fig_spend = px.bar(df, x="Week", y="Spend",
-                       title="Weekly Spend ($) - nonTMP",
-                       color_discrete_sequence=[COLORS["nonTMP"]])
-    fig_spend.update_layout(hovermode="x unified")
-    st.plotly_chart(fig_spend, use_container_width=True)
-
     with st.expander("Raw data"):
         st.dataframe(df, use_container_width=True)
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# VIEW 4: IS by Geo
+# VIEW 5: IS by Geo
 # ────────────────────────────────────────────────────────────────────────────
-elif view == "4. IS by Geo":
+elif view == "5. IS by Geo":
     st.subheader("TMP IS by Geo")
     st.caption("Exact match keywords | Brand-Trademark ad group | Excl. Trello")
 
@@ -842,9 +1123,9 @@ elif view == "4. IS by Geo":
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# VIEW 5: YoY Comparison
+# VIEW 6: YoY Comparison
 # ────────────────────────────────────────────────────────────────────────────
-elif view == "5. YoY Comparison":
+elif view == "6. YoY Comparison":
     st.subheader("YoY IS + Spend Comparison: FY26 vs FY27")
     st.caption("Exact match keywords | All geos | Brand-Trademark ad group | Excl. Trello")
     st.info("Context: From Feb 2026, Brand-General was consolidated under Brand-Trademark as an ad group (BPS consolidation). IS is at exact match keyword level throughout for consistency.")
