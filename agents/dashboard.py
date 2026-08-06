@@ -303,12 +303,43 @@ def fetch_tmp_monthly(start_date, end_date):
 
 @st.cache_data(ttl=3600)
 def fetch_nontmp_weekly(start_date, end_date):
-    """nonTMP (Brand-General) all match types, weekly aggregated."""
-    rows = run_query(f"""
-        SELECT segments.week, metrics.search_impression_share,
+    """nonTMP (Brand-General) all match types, weekly aggregated.
+
+    IS is pulled at ad_group level (filtered client-side to S:brand-general ad groups)
+    because GAQL REGEXP_MATCH on ad_group.name is not supported. Lost IS (budget/rank)
+    is pulled separately at campaign level from S:brand-trademark campaigns that contain
+    brand-general ad groups, then merged by week.
+    """
+    # ── Step 1: IS at ad_group level, filtered client-side ──
+    ag_rows = run_query(f"""
+        SELECT segments.week, ad_group.name,
+               metrics.search_impression_share,
+               metrics.impressions, metrics.clicks, metrics.cost_micros
+        FROM ad_group
+        WHERE segments.date BETWEEN '{start_date}' AND '{end_date}'
+        AND metrics.impressions > 0
+        ORDER BY segments.week
+    """)
+    agg_is = defaultdict(lambda: {"is_w": 0.0, "imp": 0, "clicks": 0, "cost": 0.0})
+    for r in ag_rows:
+        name = r.ad_group.name
+        if "S:brand-general" not in name or "trello" in name.lower():
+            continue
+        w = r.segments.week[:10]
+        imp = r.metrics.impressions
+        is_v = r.metrics.search_impression_share or 0
+        if is_v > 0 and imp > 0:
+            agg_is[w]["is_w"] += is_v * imp
+            agg_is[w]["imp"] += imp
+        agg_is[w]["clicks"] += r.metrics.clicks
+        agg_is[w]["cost"] += r.metrics.cost_micros / 1_000_000
+
+    # ── Step 2: Lost IS at campaign level (only available at campaign scope) ──
+    camp_rows = run_query(f"""
+        SELECT segments.week,
                metrics.search_budget_lost_impression_share,
                metrics.search_rank_lost_impression_share,
-               metrics.impressions, metrics.clicks, metrics.cost_micros
+               metrics.impressions
         FROM campaign
         WHERE segments.date BETWEEN '{start_date}' AND '{end_date}'
         AND campaign.name LIKE '%S:brand-trademark%'
@@ -316,29 +347,35 @@ def fetch_nontmp_weekly(start_date, end_date):
         AND metrics.impressions > 0
         ORDER BY segments.week
     """)
-    agg = defaultdict(lambda: {"is_w": 0.0, "budget_w": 0.0, "rank_w": 0.0,
-                                "imp": 0, "clicks": 0, "cost": 0.0})
-    for r in rows:
-        w = r.segments.week
+    agg_lost = defaultdict(lambda: {"budget_w": 0.0, "rank_w": 0.0, "imp": 0})
+    for r in camp_rows:
+        w = r.segments.week[:10]
         imp = r.metrics.impressions
-        is_v = r.metrics.search_impression_share or 0
         bud_v = r.metrics.search_budget_lost_impression_share or 0
         rank_v = r.metrics.search_rank_lost_impression_share or 0
         if imp > 0:
-            agg[w]["is_w"] += is_v * imp
-            agg[w]["budget_w"] += bud_v * imp
-            agg[w]["rank_w"] += rank_v * imp
-            agg[w]["imp"] += imp
-        agg[w]["clicks"] += r.metrics.clicks
-        agg[w]["cost"] += r.metrics.cost_micros / 1_000_000
-    return pd.DataFrame([{
-        "Week": w[:10],
-        "Spend": round(d["cost"]),
-        "Clicks": d["clicks"],
-        "IS": round(weighted_is(d), 1),
-        "Lost_Budget": round(d["budget_w"] / d["imp"] * 100 if d["imp"] > 0 else 0, 1),
-        "Lost_Rank": round(d["rank_w"] / d["imp"] * 100 if d["imp"] > 0 else 0, 1),
-    } for w, d in sorted(agg.items())])
+            agg_lost[w]["budget_w"] += bud_v * imp
+            agg_lost[w]["rank_w"] += rank_v * imp
+            agg_lost[w]["imp"] += imp
+
+    # ── Step 3: Merge and build output ──
+    all_weeks = sorted(set(list(agg_is.keys()) + list(agg_lost.keys())))
+    records = []
+    for w in all_weeks:
+        d_is = agg_is.get(w, {"is_w": 0.0, "imp": 0, "clicks": 0, "cost": 0.0})
+        d_lost = agg_lost.get(w, {"budget_w": 0.0, "rank_w": 0.0, "imp": 0})
+        is_pct = round(d_is["is_w"] / d_is["imp"] * 100, 1) if d_is["imp"] > 0 else 0
+        bud_pct = round(d_lost["budget_w"] / d_lost["imp"] * 100, 1) if d_lost["imp"] > 0 else 0
+        rank_pct = round(d_lost["rank_w"] / d_lost["imp"] * 100, 1) if d_lost["imp"] > 0 else 0
+        records.append({
+            "Week": w,
+            "Spend": round(d_is["cost"]),
+            "Clicks": d_is["clicks"],
+            "IS": is_pct,
+            "Lost_Budget": bud_pct,
+            "Lost_Rank": rank_pct,
+        })
+    return pd.DataFrame(records)
 
 
 @st.cache_data(ttl=3600)

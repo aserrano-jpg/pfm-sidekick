@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Jira BPS: TMP vs nonTMP IS Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; margin: 0; padding: 24px; background: #f4f6f8; color: #111; }
+    .header { margin-bottom: 28px; }
+    .title { font-size: 26px; font-weight: 700; color: #0052CC; }
+    .subtitle { color: #666; margin-top: 6px; font-size: 14px; }
+    .badge { display: inline-block; background: #E3FCEF; color: #006644; border-radius: 6px; padding: 3px 10px; font-size: 12px; font-weight: 600; margin-left: 10px; vertical-align: middle; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 28px; }
+    .card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); border-top: 4px solid #4688EC; }
+    .card.green { border-top-color: #2ABB7F; }
+    .card label { color: #777; display: block; margin-bottom: 6px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+    .card .value { font-size: 32px; font-weight: 700; line-height: 1.1; }
+    .card .delta { font-size: 13px; margin-top: 6px; }
+    .delta.up { color: #006644; }
+    .delta.down { color: #BF2600; }
+    .delta.flat { color: #666; }
+    .section { background: white; border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+    .section h2 { font-size: 17px; font-weight: 700; margin: 0 0 6px; }
+    .section .desc { font-size: 13px; color: #666; margin-bottom: 20px; }
+    .chart-wrap { position: relative; height: 280px; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+    .tab { padding: 7px 16px; border-radius: 20px; border: 1px solid #ddd; background: white; cursor: pointer; font-size: 13px; font-weight: 500; color: #444; transition: all 0.15s; }
+    .tab.active { background: #0052CC; color: white; border-color: #0052CC; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { background: #f4f6f8; color: #444; font-weight: 600; padding: 10px 12px; text-align: left; border-bottom: 2px solid #e8eaed; }
+    td { padding: 9px 12px; border-bottom: 1px solid #f0f0f0; }
+    tr:last-child td { border-bottom: none; }
+    .bar-wrap { background: #e8eaed; border-radius: 999px; height: 10px; min-width: 80px; }
+    .bar-fill { height: 100%; border-radius: 999px; }
+    .bar-tmp { background: #4688EC; }
+    .bar-nontmp { background: #2ABB7F; }
+    .bar-rank { background: #F4A261; }
+    .note { font-size: 13px; color: #444; background: #F0F4FF; border-left: 3px solid #4688EC; padding: 12px 16px; border-radius: 6px; margin-top: 20px; }
+    .footer { font-size: 12px; color: #999; margin-top: 32px; text-align: center; }
+    @media (max-width: 600px) { .cards { grid-template-columns: 1fr 1fr; } }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div class="title">Jira BPS: TMP vs nonTMP IS Dashboard <span class="badge">Internal</span></div>
+  <div class="subtitle">Brand paid search impression share, spend, and click trends | Google Ads API | All geos excl. Trello | As of Aug 06, 2026</div>
+</div>
+
+<div class="cards">
+  <div class="card">
+    <label>TMP IS (Jul 2026)</label>
+    <div class="value">94.8%</div>
+    <div class="delta up">
+      ▲ 4.7pp vs Jun
+    </div>
+  </div>
+  <div class="card green">
+    <label>nonTMP IS (w/o Aug 3)</label>
+    <div class="value">63.3%</div>
+    <div class="delta up">
+      ▲ 5.0pp vs prior week
+    </div>
+  </div>
+  <div class="card">
+    <label>TMP Lost IS (Rank)</label>
+    <div class="value" style="font-size:26px;">~5%</div>
+    <div class="delta flat">Rank-constrained, budget healthy</div>
+  </div>
+  <div class="card green">
+    <label>nonTMP Lost IS (Rank)</label>
+    <div class="value" style="font-size:26px;">23.8%</div>
+    <div class="delta down">Rank-constrained, bid lever available</div>
+  </div>
+</div>
+
+<!-- TMP Monthly -->
+<div class="section">
+  <h2>TMP (Brand-Trademark) Monthly IS</h2>
+  <div class="desc">Exact match keywords only. Impressions-weighted IS. 13-month trend.</div>
+  <div class="chart-wrap"><canvas id="tmpMonthlyChart"></canvas></div>
+  <div class="note">Jul 2026 at 94.8% IS, near cycle high. Jun dip was driven by conversion outage and account suspension in May.</div>
+</div>
+
+<!-- nonTMP Weekly -->
+<div class="section">
+  <h2>nonTMP (Brand-General) Weekly IS</h2>
+  <div class="desc">All match types, S:brand-general ad groups. Last 8 weeks. Lost IS breakdown below.</div>
+  <div class="chart-wrap"><canvas id="nontmpChart"></canvas></div>
+  <div class="note">IS is rank-constrained (20-28% lost to rank vs near-zero budget loss). Spend step-up in late July bought IS back to 63% in Aug 3 week. Bid strategy is the primary lever.</div>
+</div>
+
+<!-- nonTMP Lost IS stacked -->
+<div class="section">
+  <h2>nonTMP Lost IS Breakdown</h2>
+  <div class="desc">Budget vs rank loss by week. Budget loss is minimal; rank loss is the structural constraint.</div>
+  <div class="chart-wrap"><canvas id="lostIsChart"></canvas></div>
+</div>
+
+<!-- Data tables -->
+<div class="section">
+  <h2>Raw Data</h2>
+  <div class="tabs">
+    <div class="tab active" onclick="showTab('tmp')">TMP Monthly</div>
+    <div class="tab" onclick="showTab('nontmp')">nonTMP Weekly</div>
+  </div>
+  <div id="tab-tmp">
+    <table>
+      <thead><tr><th>Month</th><th>IS%</th><th>IS Bar</th><th>Spend</th><th>Clicks</th></tr></thead>
+      <tbody>
+        <tr><td>2026-07</td><td><strong>94.8%</strong></td>
+          <td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:94.8%"></div></div></td>
+          <td>$589,234</td><td>463,821</td></tr>
+        <tr><td>2026-06</td><td><strong>90.1%</strong></td>
+          <td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:90.1%"></div></div></td>
+          <td>$512,847</td><td>431,209</td></tr>
+        <tr><td>2026-05</td><td><strong>88.5%</strong></td>
+          <td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:88.5%"></div></div></td>
+          <td>$489,234</td><td>412,301</td></tr>
+        <tr><td>2026-04</td><td><strong>91.8%</strong></td>
+          <td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:91.8%"></div></div></td>
+          <td>$571,443</td><td>498,211</td></tr>
+        <tr><td>2026-03</td><td><strong>92.4%</strong></td>
+          <td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:92.4%"></div></div></td>
+          <td>$598,211</td><td>534,920</td></tr>
+        <tr><td>2026-02</td><td><strong>91.2%</strong></td>
+          <td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:91.2%"></div></div></td>
+          <td>$521,034</td><td>501,843</td></tr>
+        <tr><td>2026-01</td><td><strong>89.3%</strong></td>
+          <td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:89.3%"></div></div></td>
+          <td>$462,288</td><td>487,792</td></tr>
+        <tr><td>2025-12</td><td><strong>85.5%</strong></td>
+          <td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:85.5%"></div></div></td>
+          <td>$283,252</td><td>366,992</td></tr>
+        <tr><td>2025-11</td><td><strong>90.5%</strong></td>
+          <td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:90.5%"></div></div></td>
+          <td>$487,462</td><td>470,754</td></tr>
+        <tr><td>2025-10</td><td><strong>89.6%</strong></td>
+          <td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:89.6%"></div></div></td>
+          <td>$482,677</td><td>507,411</td></tr>
+        <tr><td>2025-09</td><td><strong>88.1%</strong></td>
+          <td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:88.1%"></div></div></td>
+          <td>$386,572</td><td>468,820</td></tr>
+        <tr><td>2025-08</td><td><strong>91.8%</strong></td>
+          <td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:91.8%"></div></div></td>
+          <td>$414,899</td><td>404,182</td></tr>
+        <tr><td>2025-07</td><td><strong>92.2%</strong></td>
+          <td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:92.2%"></div></div></td>
+          <td>$435,671</td><td>349,205</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div id="tab-nontmp" style="display:none">
+    <table>
+      <thead><tr><th>Week</th><th>IS%</th><th>IS Bar</th><th>Lost Rank%</th><th>Lost Budget%</th><th>Clicks</th><th>Spend</th></tr></thead>
+      <tbody>
+        <tr><td>2026-08-03</td><td><strong>63.3%</strong></td>
+          <td><div class="bar-wrap"><div class="bar-fill bar-nontmp" style="width:63.3%"></div></div></td>
+          <td style="color:#E76F51">23.8%</td>
+          <td>0.0%</td>
+          <td>10,327</td><td>$56,284</td></tr>
+        <tr><td>2026-07-27</td><td><strong>58.3%</strong></td>
+          <td><div class="bar-wrap"><div class="bar-fill bar-nontmp" style="width:58.3%"></div></div></td>
+          <td style="color:#E76F51">28.0%</td>
+          <td>0.0%</td>
+          <td>28,524</td><td>$133,471</td></tr>
+        <tr><td>2026-07-20</td><td><strong>56.0%</strong></td>
+          <td><div class="bar-wrap"><div class="bar-fill bar-nontmp" style="width:56.0%"></div></div></td>
+          <td style="color:#E76F51">28.6%</td>
+          <td>0.4%</td>
+          <td>27,759</td><td>$114,203</td></tr>
+        <tr><td>2026-07-13</td><td><strong>54.1%</strong></td>
+          <td><div class="bar-wrap"><div class="bar-fill bar-nontmp" style="width:54.1%"></div></div></td>
+          <td style="color:#E76F51">19.6%</td>
+          <td>8.5%</td>
+          <td>20,292</td><td>$67,182</td></tr>
+        <tr><td>2026-07-06</td><td><strong>55.9%</strong></td>
+          <td><div class="bar-wrap"><div class="bar-fill bar-nontmp" style="width:55.9%"></div></div></td>
+          <td style="color:#E76F51">20.2%</td>
+          <td>8.7%</td>
+          <td>21,779</td><td>$72,341</td></tr>
+        <tr><td>2026-06-29</td><td><strong>52.8%</strong></td>
+          <td><div class="bar-wrap"><div class="bar-fill bar-nontmp" style="width:52.8%"></div></div></td>
+          <td style="color:#E76F51">28.2%</td>
+          <td>3.2%</td>
+          <td>19,636</td><td>$58,969</td></tr>
+        <tr><td>2026-06-22</td><td><strong>54.2%</strong></td>
+          <td><div class="bar-wrap"><div class="bar-fill bar-nontmp" style="width:54.2%"></div></div></td>
+          <td style="color:#E76F51">27.0%</td>
+          <td>0.0%</td>
+          <td>16,335</td><td>$38,509</td></tr>
+        <tr><td>2026-06-15</td><td><strong>54.5%</strong></td>
+          <td><div class="bar-wrap"><div class="bar-fill bar-nontmp" style="width:54.5%"></div></div></td>
+          <td style="color:#E76F51">27.3%</td>
+          <td>0.0%</td>
+          <td>20,562</td><td>$60,041</td></tr>
+        <tr><td>2026-06-08</td><td><strong>56.3%</strong></td>
+          <td><div class="bar-wrap"><div class="bar-fill bar-nontmp" style="width:56.3%"></div></div></td>
+          <td style="color:#E76F51">25.4%</td>
+          <td>0.0%</td>
+          <td>8,573</td><td>$22,279</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="footer">Jira BPS Dashboard | Data: Google Ads API | Generated Aug 06, 2026 | Internal use only</div>
+
+<script>
+const TMP_MONTHLY = [{"month": "2025-07", "is": 92.2, "spend": 435671, "clicks": 349205}, {"month": "2025-08", "is": 91.8, "spend": 414899, "clicks": 404182}, {"month": "2025-09", "is": 88.1, "spend": 386572, "clicks": 468820}, {"month": "2025-10", "is": 89.6, "spend": 482677, "clicks": 507411}, {"month": "2025-11", "is": 90.5, "spend": 487462, "clicks": 470754}, {"month": "2025-12", "is": 85.5, "spend": 283252, "clicks": 366992}, {"month": "2026-01", "is": 89.3, "spend": 462288, "clicks": 487792}, {"month": "2026-02", "is": 91.2, "spend": 521034, "clicks": 501843}, {"month": "2026-03", "is": 92.4, "spend": 598211, "clicks": 534920}, {"month": "2026-04", "is": 91.8, "spend": 571443, "clicks": 498211}, {"month": "2026-05", "is": 88.5, "spend": 489234, "clicks": 412301}, {"month": "2026-06", "is": 90.1, "spend": 512847, "clicks": 431209}, {"month": "2026-07", "is": 94.8, "spend": 589234, "clicks": 463821}];
+const NONTMP_WEEKLY = [{"week": "2026-06-08", "is": 56.3, "lost_budget": 0.0, "lost_rank": 25.4, "clicks": 8573, "spend": 22279}, {"week": "2026-06-15", "is": 54.5, "lost_budget": 0.0, "lost_rank": 27.3, "clicks": 20562, "spend": 60041}, {"week": "2026-06-22", "is": 54.2, "lost_budget": 0.0, "lost_rank": 27.0, "clicks": 16335, "spend": 38509}, {"week": "2026-06-29", "is": 52.8, "lost_budget": 3.2, "lost_rank": 28.2, "clicks": 19636, "spend": 58969}, {"week": "2026-07-06", "is": 55.9, "lost_budget": 8.7, "lost_rank": 20.2, "clicks": 21779, "spend": 72341}, {"week": "2026-07-13", "is": 54.1, "lost_budget": 8.5, "lost_rank": 19.6, "clicks": 20292, "spend": 67182}, {"week": "2026-07-20", "is": 56.0, "lost_budget": 0.4, "lost_rank": 28.6, "clicks": 27759, "spend": 114203}, {"week": "2026-07-27", "is": 58.3, "lost_budget": 0.0, "lost_rank": 28.0, "clicks": 28524, "spend": 133471}, {"week": "2026-08-03", "is": 63.3, "lost_budget": 0.0, "lost_rank": 23.8, "clicks": 10327, "spend": 56284}];
+
+// TMP Monthly IS chart
+new Chart(document.getElementById('tmpMonthlyChart'), {
+  type: 'line',
+  data: {
+    labels: TMP_MONTHLY.map(d => d.month),
+    datasets: [{
+      label: 'TMP IS%',
+      data: TMP_MONTHLY.map(d => d.is),
+      borderColor: '#4688EC',
+      backgroundColor: 'rgba(70,136,236,0.08)',
+      borderWidth: 3,
+      pointRadius: 5,
+      pointBackgroundColor: '#4688EC',
+      fill: true,
+      tension: 0.3,
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ctx.parsed.y + '%' } } },
+    scales: {
+      y: { min: 75, max: 100, ticks: { callback: v => v + '%' }, grid: { color: '#f0f0f0' } },
+      x: { grid: { display: false } }
+    }
+  }
+});
+
+// nonTMP IS chart
+new Chart(document.getElementById('nontmpChart'), {
+  type: 'line',
+  data: {
+    labels: NONTMP_WEEKLY.map(d => d.week),
+    datasets: [{
+      label: 'nonTMP IS%',
+      data: NONTMP_WEEKLY.map(d => d.is),
+      borderColor: '#2ABB7F',
+      backgroundColor: 'rgba(42,187,127,0.08)',
+      borderWidth: 3,
+      pointRadius: 5,
+      pointBackgroundColor: '#2ABB7F',
+      fill: true,
+      tension: 0.3,
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ctx.parsed.y + '%' } } },
+    scales: {
+      y: { min: 40, max: 75, ticks: { callback: v => v + '%' }, grid: { color: '#f0f0f0' } },
+      x: { grid: { display: false } }
+    }
+  }
+});
+
+// Lost IS stacked bar
+new Chart(document.getElementById('lostIsChart'), {
+  type: 'bar',
+  data: {
+    labels: NONTMP_WEEKLY.map(d => d.week),
+    datasets: [
+      { label: 'Lost (Rank)', data: NONTMP_WEEKLY.map(d => d.lost_rank), backgroundColor: '#F4A261' },
+      { label: 'Lost (Budget)', data: NONTMP_WEEKLY.map(d => d.lost_budget), backgroundColor: '#E76F51' },
+      { label: 'IS Won', data: NONTMP_WEEKLY.map(d => d.is), backgroundColor: '#2ABB7F' },
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y + '%' } } },
+    scales: {
+      x: { stacked: true, grid: { display: false } },
+      y: { stacked: true, max: 100, ticks: { callback: v => v + '%' }, grid: { color: '#f0f0f0' } }
+    }
+  }
+});
+
+function showTab(name) {
+  document.getElementById('tab-tmp').style.display = name==='tmp' ? '' : 'none';
+  document.getElementById('tab-nontmp').style.display = name==='nontmp' ? '' : 'none';
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', (name==='tmp'&&i===0)||(name==='nontmp'&&i===1)));
+}
+</script>
+</body>
+</html>
