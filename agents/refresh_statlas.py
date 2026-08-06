@@ -83,28 +83,37 @@ def pull_tmp_monthly_by_keyword(service, customer_id):
         ORDER BY segments.month
     """)
     agg = defaultdict(lambda: defaultdict(lambda: {"is_w": 0.0, "imp": 0, "clicks": 0, "cost": 0.0}))
+    import re as _re
+
     def normalize_kw(kw):
         kw = kw.lower().strip()
         if kw == "atlassian jira":
             kw = "jira atlassian"
         return kw
 
+    def parse_lang(ag_name):
+        m = _re.search(r"L:([a-z]+)", ag_name)
+        return m.group(1) if m else "other"
+
     for r in rows:
         m = r.segments.month[:7]
         kw = normalize_kw(r.ad_group_criterion.keyword.text)
+        lang = parse_lang(r.ad_group.name)
         imp = r.metrics.impressions
         is_v = r.metrics.search_impression_share or 0
+        key = (kw, lang)
         if is_v > 0 and imp > 0:
-            agg[m][kw]["is_w"] += is_v * imp
-            agg[m][kw]["imp"] += imp
-        agg[m][kw]["clicks"] += r.metrics.clicks
-        agg[m][kw]["cost"] += r.metrics.cost_micros / 1_000_000
+            agg[m][key]["is_w"] += is_v * imp
+            agg[m][key]["imp"] += imp
+        agg[m][key]["clicks"] += r.metrics.clicks
+        agg[m][key]["cost"] += r.metrics.cost_micros / 1_000_000
     records = []
     for m in sorted(agg.keys()):
-        for kw, d in agg[m].items():
+        for (kw, lang), d in agg[m].items():
             records.append({
                 "month": m,
                 "keyword": kw,
+                "lang": lang,
                 "spend": round(d["cost"]),
                 "clicks": d["clicks"],
                 "is": round(d["is_w"] / d["imp"] * 100, 1) if d["imp"] > 0 else 0,
@@ -489,19 +498,30 @@ const NONTMP_WEEKLY = {json.dumps(nontmp_weekly)};
 const TMP_BY_KW = {json.dumps(tmp_by_kw or [])};
 const NONTMP_MONTHLY = {json.dumps(nontmp_monthly or [])};
 
-// ── Keyword filter setup ──
+// ── Keyword + Language filter setup ──
 const allKeywords = [...new Set(TMP_BY_KW.map(d => d.keyword))].sort();
+const allLangs = [...new Set(TMP_BY_KW.map(d => d.lang))].sort();
 let selectedKeywords = new Set(allKeywords);
+let selectedLangs = new Set(allLangs);
 
 function buildKwFilter() {{
   const wrap = document.getElementById('kw-filter');
   if (!allKeywords.length) {{ wrap.style.display = 'none'; return; }}
-  wrap.innerHTML = '<strong style="font-size:13px;color:#333">Filter keywords:</strong> ' +
+  wrap.innerHTML =
+    '<strong style="font-size:13px;color:#333">Keywords:</strong> ' +
     '<label style="margin-left:8px;font-size:12px;cursor:pointer">' +
     '<input type="checkbox" id="kw-all" checked onchange="toggleAllKw(this.checked)"> All</label> ' +
     allKeywords.map(kw =>
       `<label style="margin-left:8px;font-size:12px;cursor:pointer;white-space:nowrap">` +
       `<input type="checkbox" class="kw-cb" value="${{kw}}" checked onchange="updateKwFilter()"> ${{kw}}</label>`
+    ).join('') +
+    '<span style="margin-left:16px;margin-right:4px;color:#aaa">|</span>' +
+    '<strong style="font-size:13px;color:#333">Language:</strong> ' +
+    '<label style="margin-left:8px;font-size:12px;cursor:pointer">' +
+    '<input type="checkbox" id="lang-all" checked onchange="toggleAllLang(this.checked)"> All</label> ' +
+    allLangs.map(l =>
+      `<label style="margin-left:8px;font-size:12px;cursor:pointer;white-space:nowrap">` +
+      `<input type="checkbox" class="lang-cb" value="${{l}}" checked onchange="updateLangFilter()"> ${{l}}</label>`
     ).join('');
 }}
 
@@ -513,14 +533,24 @@ function toggleAllKw(checked) {{
 
 function updateKwFilter() {{
   selectedKeywords = new Set([...document.querySelectorAll('.kw-cb:checked')].map(cb => cb.value));
-  const allChecked = selectedKeywords.size === allKeywords.length;
-  document.getElementById('kw-all').checked = allChecked;
+  document.getElementById('kw-all').checked = selectedKeywords.size === allKeywords.length;
+  renderTmpChart();
+}}
+
+function toggleAllLang(checked) {{
+  document.querySelectorAll('.lang-cb').forEach(cb => cb.checked = checked);
+  selectedLangs = checked ? new Set(allLangs) : new Set();
+  renderTmpChart();
+}}
+
+function updateLangFilter() {{
+  selectedLangs = new Set([...document.querySelectorAll('.lang-cb:checked')].map(cb => cb.value));
+  document.getElementById('lang-all').checked = selectedLangs.size === allLangs.length;
   renderTmpChart();
 }}
 
 function getRolledUp() {{
-  // Roll up keyword-level data to monthly totals for selected keywords
-  const filtered = TMP_BY_KW.filter(d => selectedKeywords.has(d.keyword));
+  const filtered = TMP_BY_KW.filter(d => selectedKeywords.has(d.keyword) && selectedLangs.has(d.lang));
   const byMonth = {{}};
   filtered.forEach(d => {{
     if (!byMonth[d.month]) byMonth[d.month] = {{is_w: 0, imp: 0, spend: 0, clicks: 0}};
@@ -529,7 +559,6 @@ function getRolledUp() {{
     byMonth[d.month].spend += d.spend;
     byMonth[d.month].clicks += d.clicks;
   }});
-  // Fall back to full TMP_MONTHLY if no keyword data
   if (!filtered.length) return TMP_MONTHLY;
   const months = Object.keys(byMonth).sort();
   return months.map(m => ({{

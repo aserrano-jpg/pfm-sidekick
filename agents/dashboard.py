@@ -468,29 +468,38 @@ def fetch_tmp_monthly_by_keyword(start_date, end_date):
         AND metrics.impressions > 0
         ORDER BY segments.month
     """)
+    import re as _re
+
     def normalize_kw(kw):
         kw = kw.lower().strip()
         if kw == "atlassian jira":
             kw = "jira atlassian"
         return kw
 
+    def parse_lang(ag_name):
+        m = _re.search(r"L:([a-z]+)", ag_name)
+        return m.group(1) if m else "other"
+
     agg = defaultdict(lambda: defaultdict(lambda: {"is_w": 0.0, "imp": 0, "clicks": 0, "cost": 0.0}))
     for r in rows:
         m = r.segments.month[:7]
         kw = normalize_kw(r.ad_group_criterion.keyword.text)
+        lang = parse_lang(r.ad_group.name)
         imp = r.metrics.impressions
         is_v = r.metrics.search_impression_share or 0
+        key = (kw, lang)
         if is_v > 0 and imp > 0:
-            agg[m][kw]["is_w"] += is_v * imp
-            agg[m][kw]["imp"] += imp
-        agg[m][kw]["clicks"] += r.metrics.clicks
-        agg[m][kw]["cost"] += r.metrics.cost_micros / 1_000_000
+            agg[m][key]["is_w"] += is_v * imp
+            agg[m][key]["imp"] += imp
+        agg[m][key]["clicks"] += r.metrics.clicks
+        agg[m][key]["cost"] += r.metrics.cost_micros / 1_000_000
     records = []
     for m in sorted(agg.keys()):
-        for kw, d in agg[m].items():
+        for (kw, lang), d in agg[m].items():
             records.append({
                 "Month": m,
                 "Keyword": kw,
+                "Lang": lang,
                 "Spend": round(d["cost"]),
                 "Clicks": d["clicks"],
                 "IS": round(weighted_is(d), 1),
@@ -678,7 +687,7 @@ if view == "1. MoM TMP Overview":
         st.warning("No data for this range.")
         st.stop()
 
-    # Keyword filter in sidebar
+    # Keyword + language filters in sidebar
     all_keywords = sorted(kw_df["Keyword"].unique().tolist())
     selected_kws = st.sidebar.multiselect(
         "Filter by keyword",
@@ -686,8 +695,17 @@ if view == "1. MoM TMP Overview":
         default=all_keywords,
         help="Filter TMP charts to specific exact-match keywords",
     )
+    all_langs = sorted(kw_df["Lang"].unique().tolist())
+    selected_langs = st.sidebar.multiselect(
+        "Filter by language",
+        options=all_langs,
+        default=all_langs,
+        help="Filter by ad group language tag (L:en, L:pt, L:jp, etc.)",
+    )
     if selected_kws:
         kw_df = kw_df[kw_df["Keyword"].isin(selected_kws)]
+    if selected_langs:
+        kw_df = kw_df[kw_df["Lang"].isin(selected_langs)]
 
     # Roll up to monthly totals (weighted IS) after keyword filter
     def rollup_kw(kdf):
@@ -808,7 +826,7 @@ if view == "1. MoM TMP Overview":
     kw_latest = (
         kw_df[kw_df["Month"] == latest_kw_month]
         .sort_values("IS", ascending=False)
-        [["Keyword", "IS", "Spend", "Clicks"]]
+        [["Keyword", "Lang", "IS", "Spend", "Clicks"]]
         .reset_index(drop=True)
     )
     kw_display = kw_latest.copy()
