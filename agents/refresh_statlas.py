@@ -425,9 +425,10 @@ def publish():
     result = subprocess.run(
         ["atlas", "statlas", "put",
          "-n", STATLAS_NAMESPACE,
-         "-f", OUTPUT_FILE,
+         "-f", os.path.basename(OUTPUT_FILE),
          "--auth-group", STATLAS_AUTH_GROUP],
-        capture_output=True, text=True
+        capture_output=True, text=True,
+        cwd=os.path.dirname(OUTPUT_FILE),
     )
     if result.returncode == 0:
         url = f"https://statlas.prod.atl-paas.net/{STATLAS_NAMESPACE}/bps_is_dashboard.html"
