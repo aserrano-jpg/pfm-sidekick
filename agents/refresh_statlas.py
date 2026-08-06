@@ -76,9 +76,8 @@ def pull_tmp_monthly_by_keyword(service, customer_id):
                metrics.impressions, metrics.clicks, metrics.cost_micros
         FROM keyword_view
         WHERE segments.date BETWEEN '{START_13M}' AND '{END}'
-        AND campaign.name LIKE '%S:brand-trademark%'
-        AND campaign.name NOT LIKE '%trello%'
-        AND ad_group.name LIKE '%Brand-Trademark%'
+        AND ad_group.name LIKE '%S:brand-trademark%'
+        AND ad_group.name NOT LIKE '%trello%'
         AND ad_group_criterion.keyword.match_type = 'EXACT'
         AND metrics.impressions > 0
         ORDER BY segments.month
@@ -116,9 +115,8 @@ def pull_tmp_monthly(service, customer_id):
                metrics.impressions, metrics.clicks, metrics.cost_micros
         FROM keyword_view
         WHERE segments.date BETWEEN '{START_13M}' AND '{END}'
-        AND campaign.name LIKE '%S:brand-trademark%'
-        AND campaign.name NOT LIKE '%trello%'
-        AND ad_group.name LIKE '%Brand-Trademark%'
+        AND ad_group.name LIKE '%S:brand-trademark%'
+        AND ad_group.name NOT LIKE '%trello%'
         AND ad_group_criterion.keyword.match_type = 'EXACT'
         AND metrics.impressions > 0
         ORDER BY segments.month
