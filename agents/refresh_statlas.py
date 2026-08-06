@@ -183,6 +183,69 @@ def pull_geo_monthly(service, customer_id):
     return result, top_geos
 
 
+def pull_nontmp_monthly(service, customer_id):
+    """nonTMP (Brand-General) monthly aggregated IS, spend, clicks, lost IS."""
+    print("Pulling nonTMP monthly IS (13 months, ad_group level)...")
+    ag_rows = run_query(service, customer_id, f"""
+        SELECT segments.month, ad_group.name,
+               metrics.search_impression_share,
+               metrics.impressions, metrics.clicks, metrics.cost_micros
+        FROM ad_group
+        WHERE segments.date BETWEEN '{START_13M}' AND '{END}'
+        AND metrics.impressions > 0
+        ORDER BY segments.month
+    """)
+    agg_is = defaultdict(lambda: {"is_w": 0.0, "imp": 0, "clicks": 0, "cost": 0.0})
+    for r in ag_rows:
+        name = r.ad_group.name
+        if "S:brand-general" not in name or "trello" in name.lower():
+            continue
+        m = r.segments.month[:7]
+        imp = r.metrics.impressions
+        is_v = r.metrics.search_impression_share or 0
+        if is_v > 0 and imp > 0:
+            agg_is[m]["is_w"] += is_v * imp
+            agg_is[m]["imp"] += imp
+        agg_is[m]["clicks"] += r.metrics.clicks
+        agg_is[m]["cost"] += r.metrics.cost_micros / 1_000_000
+
+    camp_rows = run_query(service, customer_id, f"""
+        SELECT segments.month,
+               metrics.search_budget_lost_impression_share,
+               metrics.search_rank_lost_impression_share,
+               metrics.impressions
+        FROM campaign
+        WHERE segments.date BETWEEN '{START_13M}' AND '{END}'
+        AND campaign.name LIKE '%S:brand-trademark%'
+        AND campaign.name NOT LIKE '%trello%'
+        AND metrics.impressions > 0
+        ORDER BY segments.month
+    """)
+    agg_lost = defaultdict(lambda: {"budget_w": 0.0, "rank_w": 0.0, "imp": 0})
+    for r in camp_rows:
+        m = r.segments.month[:7]
+        imp = r.metrics.impressions
+        if imp > 0:
+            agg_lost[m]["budget_w"] += (r.metrics.search_budget_lost_impression_share or 0) * imp
+            agg_lost[m]["rank_w"] += (r.metrics.search_rank_lost_impression_share or 0) * imp
+            agg_lost[m]["imp"] += imp
+
+    result = []
+    for m in sorted(set(list(agg_is.keys()) + list(agg_lost.keys()))):
+        di = agg_is.get(m, {"is_w": 0, "imp": 0, "clicks": 0, "cost": 0})
+        dl = agg_lost.get(m, {"budget_w": 0, "rank_w": 0, "imp": 0})
+        result.append({
+            "month": m,
+            "is": round(di["is_w"] / di["imp"] * 100, 1) if di["imp"] > 0 else 0,
+            "lost_budget": round(dl["budget_w"] / dl["imp"] * 100, 1) if dl["imp"] > 0 else 0,
+            "lost_rank": round(dl["rank_w"] / dl["imp"] * 100, 1) if dl["imp"] > 0 else 0,
+            "clicks": di["clicks"],
+            "spend": round(di["cost"]),
+        })
+    print(f"  {len(result)} months")
+    return result
+
+
 def pull_nontmp_weekly(service, customer_id):
     print("Pulling nonTMP weekly IS (8 weeks, ad_group level)...")
     # IS at ad_group level, filtered client-side
@@ -248,7 +311,7 @@ def pull_nontmp_weekly(service, customer_id):
 
 
 # ── HTML builder ──────────────────────────────────────────────────────────────
-def build_html(tmp_monthly, nontmp_weekly, geo_out=None, top_geos=None, tmp_by_kw=None):
+def build_html(tmp_monthly, nontmp_weekly, geo_out=None, top_geos=None, tmp_by_kw=None, nontmp_monthly=None):
     print("Building HTML...")
     tmp_latest = tmp_monthly[-1] if tmp_monthly else {}
     tmp_prev = tmp_monthly[-2] if len(tmp_monthly) >= 2 else tmp_latest
@@ -377,6 +440,18 @@ def build_html(tmp_monthly, nontmp_weekly, geo_out=None, top_geos=None, tmp_by_k
 </div>
 
 <div class="section">
+  <h2>nonTMP (Brand-General) Monthly IS</h2>
+  <div class="desc">All match types | All geos | Excl. Trello | 13-month trend. Lost IS at campaign level.</div>
+  <div class="chart-wrap"><canvas id="nontmpMonthlyChart"></canvas></div>
+</div>
+
+<div class="section">
+  <h2>nonTMP Monthly Lost IS Breakdown</h2>
+  <div class="desc">Budget vs rank loss by month. Shows structural IS constraints over time.</div>
+  <div class="chart-wrap"><canvas id="nontmpMonthlyLostChart"></canvas></div>
+</div>
+
+<div class="section">
   <h2>nonTMP Lost IS Breakdown</h2>
   <div class="desc">Budget vs rank loss by week. Budget loss is minimal; rank loss is the structural constraint.</div>
   <div class="chart-wrap"><canvas id="lostIsChart"></canvas></div>
@@ -408,6 +483,7 @@ def build_html(tmp_monthly, nontmp_weekly, geo_out=None, top_geos=None, tmp_by_k
 const TMP_MONTHLY = {json.dumps(tmp_monthly)};
 const NONTMP_WEEKLY = {json.dumps(nontmp_weekly)};
 const TMP_BY_KW = {json.dumps(tmp_by_kw or [])};
+const NONTMP_MONTHLY = {json.dumps(nontmp_monthly or [])};
 
 // ── Keyword filter setup ──
 const allKeywords = [...new Set(TMP_BY_KW.map(d => d.keyword))].sort();
@@ -482,6 +558,38 @@ function renderTmpChart() {{
 buildKwFilter();
 renderTmpChart();
 
+if (NONTMP_MONTHLY.length) {{
+  new Chart(document.getElementById('nontmpMonthlyChart'), {{
+    type: 'line',
+    data: {{
+      labels: NONTMP_MONTHLY.map(d => d.month),
+      datasets: [{{ label: 'nonTMP IS%', data: NONTMP_MONTHLY.map(d => d.is),
+        borderColor: '#2ABB7F', backgroundColor: 'rgba(42,187,127,0.08)',
+        borderWidth: 3, pointRadius: 5, pointBackgroundColor: '#2ABB7F', fill: true, tension: 0.3 }}]
+    }},
+    options: {{ responsive: true, maintainAspectRatio: false,
+      plugins: {{ legend: {{ display: false }}, tooltip: {{ callbacks: {{ label: ctx => ctx.parsed.y + '%' }} }} }},
+      scales: {{ y: {{ min: 40, max: 80, ticks: {{ callback: v => v + '%' }}, grid: {{ color: '#f0f0f0' }} }},
+                 x: {{ grid: {{ display: false }} }} }} }}
+  }});
+
+  new Chart(document.getElementById('nontmpMonthlyLostChart'), {{
+    type: 'bar',
+    data: {{
+      labels: NONTMP_MONTHLY.map(d => d.month),
+      datasets: [
+        {{ label: 'Lost (Rank)', data: NONTMP_MONTHLY.map(d => d.lost_rank), backgroundColor: '#F4A261' }},
+        {{ label: 'Lost (Budget)', data: NONTMP_MONTHLY.map(d => d.lost_budget), backgroundColor: '#E76F51' }},
+        {{ label: 'IS Won', data: NONTMP_MONTHLY.map(d => d.is), backgroundColor: '#2ABB7F' }},
+      ]
+    }},
+    options: {{ responsive: true, maintainAspectRatio: false,
+      plugins: {{ tooltip: {{ callbacks: {{ label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y + '%' }} }} }},
+      scales: {{ x: {{ stacked: true, grid: {{ display: false }} }},
+                 y: {{ stacked: true, max: 100, ticks: {{ callback: v => v + '%' }}, grid: {{ color: '#f0f0f0' }} }} }} }}
+  }});
+}}
+
 new Chart(document.getElementById('nontmpChart'), {{
   type: 'line',
   data: {{
@@ -550,10 +658,11 @@ def main():
     service, customer_id = load_ga_client()
     tmp_monthly = pull_tmp_monthly(service, customer_id)
     tmp_by_kw = pull_tmp_monthly_by_keyword(service, customer_id)
+    nontmp_monthly = pull_nontmp_monthly(service, customer_id)
     nontmp_weekly = pull_nontmp_weekly(service, customer_id)
     geo_out, top_geos = pull_geo_monthly(service, customer_id)
 
-    html = build_html(tmp_monthly, nontmp_weekly, geo_out, top_geos, tmp_by_kw=tmp_by_kw)
+    html = build_html(tmp_monthly, nontmp_weekly, geo_out, top_geos, tmp_by_kw=tmp_by_kw, nontmp_monthly=nontmp_monthly)
     with open(OUTPUT_FILE, "w") as f:
         f.write(html)
     print(f"HTML written: {OUTPUT_FILE}")
