@@ -66,6 +66,49 @@ def run_query(service, customer_id, q):
 
 
 # ── Data pulls ────────────────────────────────────────────────────────────────
+def pull_tmp_monthly_by_keyword(service, customer_id):
+    """TMP monthly IS/spend/clicks broken out by keyword text (exact match)."""
+    print("Pulling TMP monthly IS by keyword...")
+    rows = run_query(service, customer_id, f"""
+        SELECT segments.month,
+               ad_group_criterion.keyword.text,
+               metrics.search_impression_share,
+               metrics.impressions, metrics.clicks, metrics.cost_micros
+        FROM keyword_view
+        WHERE segments.date BETWEEN '{START_13M}' AND '{END}'
+        AND campaign.name LIKE '%S:brand-trademark%'
+        AND campaign.name NOT LIKE '%trello%'
+        AND ad_group.name LIKE '%Brand-Trademark%'
+        AND ad_group_criterion.keyword.match_type = 'EXACT'
+        AND metrics.impressions > 0
+        ORDER BY segments.month
+    """)
+    agg = defaultdict(lambda: defaultdict(lambda: {"is_w": 0.0, "imp": 0, "clicks": 0, "cost": 0.0}))
+    for r in rows:
+        m = r.segments.month[:7]
+        kw = r.ad_group_criterion.keyword.text
+        imp = r.metrics.impressions
+        is_v = r.metrics.search_impression_share or 0
+        if is_v > 0 and imp > 0:
+            agg[m][kw]["is_w"] += is_v * imp
+            agg[m][kw]["imp"] += imp
+        agg[m][kw]["clicks"] += r.metrics.clicks
+        agg[m][kw]["cost"] += r.metrics.cost_micros / 1_000_000
+    records = []
+    for m in sorted(agg.keys()):
+        for kw, d in agg[m].items():
+            records.append({
+                "month": m,
+                "keyword": kw,
+                "spend": round(d["cost"]),
+                "clicks": d["clicks"],
+                "is": round(d["is_w"] / d["imp"] * 100, 1) if d["imp"] > 0 else 0,
+                "imp": d["imp"],
+            })
+    print(f"  {len(records)} keyword-month rows")
+    return records
+
+
 def pull_tmp_monthly(service, customer_id):
     print("Pulling TMP monthly IS (13 months)...")
     rows = run_query(service, customer_id, f"""
@@ -205,7 +248,7 @@ def pull_nontmp_weekly(service, customer_id):
 
 
 # ── HTML builder ──────────────────────────────────────────────────────────────
-def build_html(tmp_monthly, nontmp_weekly, geo_out=None, top_geos=None):
+def build_html(tmp_monthly, nontmp_weekly, geo_out=None, top_geos=None, tmp_by_kw=None):
     print("Building HTML...")
     tmp_latest = tmp_monthly[-1] if tmp_monthly else {}
     tmp_prev = tmp_monthly[-2] if len(tmp_monthly) >= 2 else tmp_latest
@@ -321,6 +364,7 @@ def build_html(tmp_monthly, nontmp_weekly, geo_out=None, top_geos=None):
 <div class="section">
   <h2>TMP (Brand-Trademark) Monthly IS</h2>
   <div class="desc">Exact match keywords only. Impressions-weighted IS. 13-month trend.</div>
+  <div id="kw-filter" style="margin-bottom:12px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:10px;background:#f8f9fa;border-radius:6px;border:1px solid #e0e0e0"></div>
   <div class="chart-wrap"><canvas id="tmpMonthlyChart"></canvas></div>
   <div class="note">Latest month at {tmp_is_now}% IS. Jun dip driven by conversion outage and account suspension in May. Recovery through Jul-Aug on spend step-up.</div>
 </div>
@@ -363,20 +407,80 @@ def build_html(tmp_monthly, nontmp_weekly, geo_out=None, top_geos=None):
 <script>
 const TMP_MONTHLY = {json.dumps(tmp_monthly)};
 const NONTMP_WEEKLY = {json.dumps(nontmp_weekly)};
+const TMP_BY_KW = {json.dumps(tmp_by_kw or [])};
 
-new Chart(document.getElementById('tmpMonthlyChart'), {{
-  type: 'line',
-  data: {{
-    labels: TMP_MONTHLY.map(d => d.month),
-    datasets: [{{ label: 'TMP IS%', data: TMP_MONTHLY.map(d => d.is),
-      borderColor: '#4688EC', backgroundColor: 'rgba(70,136,236,0.08)',
-      borderWidth: 3, pointRadius: 5, pointBackgroundColor: '#4688EC', fill: true, tension: 0.3 }}]
-  }},
-  options: {{ responsive: true, maintainAspectRatio: false,
-    plugins: {{ legend: {{ display: false }}, tooltip: {{ callbacks: {{ label: ctx => ctx.parsed.y + '%' }} }} }},
-    scales: {{ y: {{ min: 75, max: 100, ticks: {{ callback: v => v + '%' }}, grid: {{ color: '#f0f0f0' }} }},
-               x: {{ grid: {{ display: false }} }} }} }}
-}});
+// ── Keyword filter setup ──
+const allKeywords = [...new Set(TMP_BY_KW.map(d => d.keyword))].sort();
+let selectedKeywords = new Set(allKeywords);
+
+function buildKwFilter() {{
+  const wrap = document.getElementById('kw-filter');
+  if (!allKeywords.length) {{ wrap.style.display = 'none'; return; }}
+  wrap.innerHTML = '<strong style="font-size:13px;color:#333">Filter keywords:</strong> ' +
+    '<label style="margin-left:8px;font-size:12px;cursor:pointer">' +
+    '<input type="checkbox" id="kw-all" checked onchange="toggleAllKw(this.checked)"> All</label> ' +
+    allKeywords.map(kw =>
+      `<label style="margin-left:8px;font-size:12px;cursor:pointer;white-space:nowrap">` +
+      `<input type="checkbox" class="kw-cb" value="${{kw}}" checked onchange="updateKwFilter()"> ${{kw}}</label>`
+    ).join('');
+}}
+
+function toggleAllKw(checked) {{
+  document.querySelectorAll('.kw-cb').forEach(cb => cb.checked = checked);
+  selectedKeywords = checked ? new Set(allKeywords) : new Set();
+  renderTmpChart();
+}}
+
+function updateKwFilter() {{
+  selectedKeywords = new Set([...document.querySelectorAll('.kw-cb:checked')].map(cb => cb.value));
+  const allChecked = selectedKeywords.size === allKeywords.length;
+  document.getElementById('kw-all').checked = allChecked;
+  renderTmpChart();
+}}
+
+function getRolledUp() {{
+  // Roll up keyword-level data to monthly totals for selected keywords
+  const filtered = TMP_BY_KW.filter(d => selectedKeywords.has(d.keyword));
+  const byMonth = {{}};
+  filtered.forEach(d => {{
+    if (!byMonth[d.month]) byMonth[d.month] = {{is_w: 0, imp: 0, spend: 0, clicks: 0}};
+    byMonth[d.month].is_w += d.is * d.imp;
+    byMonth[d.month].imp += d.imp;
+    byMonth[d.month].spend += d.spend;
+    byMonth[d.month].clicks += d.clicks;
+  }});
+  // Fall back to full TMP_MONTHLY if no keyword data
+  if (!filtered.length) return TMP_MONTHLY;
+  const months = Object.keys(byMonth).sort();
+  return months.map(m => ({{
+    month: m,
+    is: byMonth[m].imp > 0 ? Math.round(byMonth[m].is_w / byMonth[m].imp * 10) / 10 : 0,
+    spend: byMonth[m].spend,
+    clicks: byMonth[m].clicks,
+  }}));
+}}
+
+let tmpChart = null;
+function renderTmpChart() {{
+  const data = getRolledUp();
+  if (tmpChart) tmpChart.destroy();
+  tmpChart = new Chart(document.getElementById('tmpMonthlyChart'), {{
+    type: 'line',
+    data: {{
+      labels: data.map(d => d.month),
+      datasets: [{{ label: 'TMP IS%', data: data.map(d => d.is),
+        borderColor: '#4688EC', backgroundColor: 'rgba(70,136,236,0.08)',
+        borderWidth: 3, pointRadius: 5, pointBackgroundColor: '#4688EC', fill: true, tension: 0.3 }}]
+    }},
+    options: {{ responsive: true, maintainAspectRatio: false,
+      plugins: {{ legend: {{ display: false }}, tooltip: {{ callbacks: {{ label: ctx => ctx.parsed.y + '%' }} }} }},
+      scales: {{ y: {{ min: 75, max: 100, ticks: {{ callback: v => v + '%' }}, grid: {{ color: '#f0f0f0' }} }},
+                 x: {{ grid: {{ display: false }} }} }} }}
+  }});
+}}
+
+buildKwFilter();
+renderTmpChart();
 
 new Chart(document.getElementById('nontmpChart'), {{
   type: 'line',
@@ -445,10 +549,11 @@ def main():
 
     service, customer_id = load_ga_client()
     tmp_monthly = pull_tmp_monthly(service, customer_id)
+    tmp_by_kw = pull_tmp_monthly_by_keyword(service, customer_id)
     nontmp_weekly = pull_nontmp_weekly(service, customer_id)
     geo_out, top_geos = pull_geo_monthly(service, customer_id)
 
-    html = build_html(tmp_monthly, nontmp_weekly, geo_out, top_geos)
+    html = build_html(tmp_monthly, nontmp_weekly, geo_out, top_geos, tmp_by_kw=tmp_by_kw)
     with open(OUTPUT_FILE, "w") as f:
         f.write(html)
     print(f"HTML written: {OUTPUT_FILE}")
