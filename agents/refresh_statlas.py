@@ -83,9 +83,15 @@ def pull_tmp_monthly_by_keyword(service, customer_id):
         ORDER BY segments.month
     """)
     agg = defaultdict(lambda: defaultdict(lambda: {"is_w": 0.0, "imp": 0, "clicks": 0, "cost": 0.0}))
+    def normalize_kw(kw):
+        kw = kw.lower().strip()
+        if kw == "atlassian jira":
+            kw = "jira atlassian"
+        return kw
+
     for r in rows:
         m = r.segments.month[:7]
-        kw = r.ad_group_criterion.keyword.text
+        kw = normalize_kw(r.ad_group_criterion.keyword.text)
         imp = r.metrics.impressions
         is_v = r.metrics.search_impression_share or 0
         if is_v > 0 and imp > 0:
