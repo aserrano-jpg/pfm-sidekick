@@ -276,9 +276,8 @@ def fetch_tmp_monthly(start_date, end_date):
                metrics.impressions, metrics.clicks, metrics.cost_micros
         FROM keyword_view
         WHERE segments.date BETWEEN '{start_date}' AND '{end_date}'
-        AND campaign.name LIKE '%S:brand-trademark%'
-        AND campaign.name NOT LIKE '%trello%'
-        AND ad_group.name LIKE '%Brand-Trademark%'
+        AND ad_group.name LIKE '%S:brand-trademark%'
+        AND ad_group.name NOT LIKE '%trello%'
         AND ad_group_criterion.keyword.match_type = 'EXACT'
         AND metrics.impressions > 0
         ORDER BY segments.month
@@ -463,9 +462,8 @@ def fetch_tmp_monthly_by_keyword(start_date, end_date):
                metrics.impressions, metrics.clicks, metrics.cost_micros
         FROM keyword_view
         WHERE segments.date BETWEEN '{start_date}' AND '{end_date}'
-        AND campaign.name LIKE '%S:brand-trademark%'
-        AND campaign.name NOT LIKE '%trello%'
-        AND ad_group.name LIKE '%Brand-Trademark%'
+        AND ad_group.name LIKE '%S:brand-trademark%'
+        AND ad_group.name NOT LIKE '%trello%'
         AND ad_group_criterion.keyword.match_type = 'EXACT'
         AND metrics.impressions > 0
         ORDER BY segments.month
