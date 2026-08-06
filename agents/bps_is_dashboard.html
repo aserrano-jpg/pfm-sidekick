@@ -18,9 +18,7 @@
     .card label { color: #777; display: block; margin-bottom: 6px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
     .card .value { font-size: 32px; font-weight: 700; line-height: 1.1; }
     .card .delta { font-size: 13px; margin-top: 6px; }
-    .delta.up { color: #006644; }
-    .delta.down { color: #BF2600; }
-    .delta.flat { color: #666; }
+    .delta.up { color: #006644; } .delta.down { color: #BF2600; } .delta.flat { color: #666; }
     .section { background: white; border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
     .section h2 { font-size: 17px; font-weight: 700; margin: 0 0 6px; }
     .section .desc { font-size: 13px; color: #666; margin-bottom: 20px; }
@@ -28,269 +26,196 @@
     .tabs { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
     .tab { padding: 7px 16px; border-radius: 20px; border: 1px solid #ddd; background: white; cursor: pointer; font-size: 13px; font-weight: 500; color: #444; transition: all 0.15s; }
     .tab.active { background: #0052CC; color: white; border-color: #0052CC; }
+    .nav-tabs { display: flex; gap: 4px; margin-bottom: 24px; border-bottom: 2px solid #e8eaed; }
+    .nav-tab { padding: 10px 20px; cursor: pointer; font-size: 14px; font-weight: 600; color: #666; border-bottom: 3px solid transparent; margin-bottom: -2px; transition: all 0.15s; }
+    .nav-tab.active { color: #0052CC; border-bottom-color: #0052CC; }
+    .view { display: none; } .view.active { display: block; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
     th { background: #f4f6f8; color: #444; font-weight: 600; padding: 10px 12px; text-align: left; border-bottom: 2px solid #e8eaed; }
     td { padding: 9px 12px; border-bottom: 1px solid #f0f0f0; }
     tr:last-child td { border-bottom: none; }
     .bar-wrap { background: #e8eaed; border-radius: 999px; height: 10px; min-width: 80px; }
     .bar-fill { height: 100%; border-radius: 999px; }
-    .bar-tmp { background: #4688EC; }
-    .bar-nontmp { background: #2ABB7F; }
-    .bar-rank { background: #F4A261; }
+    .bar-tmp { background: #4688EC; } .bar-nontmp { background: #2ABB7F; }
     .note { font-size: 13px; color: #444; background: #F0F4FF; border-left: 3px solid #4688EC; padding: 12px 16px; border-radius: 6px; margin-top: 20px; }
     .footer { font-size: 12px; color: #999; margin-top: 32px; text-align: center; }
     @media (max-width: 600px) { .cards { grid-template-columns: 1fr 1fr; } }
   </style>
 </head>
 <body>
-
 <div class="header">
-  <div class="title">Jira BPS: TMP vs nonTMP IS Dashboard <span class="badge">Internal</span></div>
-  <div class="subtitle">Brand paid search impression share, spend, and click trends | Google Ads API | All geos excl. Trello | As of Aug 06, 2026</div>
+<div class="title">Jira BPS: TMP vs nonTMP IS Dashboard <span class="badge">Internal</span></div>
+<div class="subtitle">Brand paid search IS, spend, clicks | Google Ads API | All geos excl. Trello | As of Aug 06, 2026</div>
 </div>
-
 <div class="cards">
-  <div class="card">
-    <label>TMP IS (Jul 2026)</label>
-    <div class="value">94.8%</div>
-    <div class="delta up">
-      ▲ 4.7pp vs Jun
-    </div>
-  </div>
-  <div class="card green">
-    <label>nonTMP IS (w/o Aug 3)</label>
-    <div class="value">63.3%</div>
-    <div class="delta up">
-      ▲ 5.0pp vs prior week
-    </div>
-  </div>
-  <div class="card">
-    <label>TMP Lost IS (Rank)</label>
-    <div class="value" style="font-size:26px;">~5%</div>
-    <div class="delta flat">Rank-constrained, budget healthy</div>
-  </div>
-  <div class="card green">
-    <label>nonTMP Lost IS (Rank)</label>
-    <div class="value" style="font-size:26px;">23.8%</div>
-    <div class="delta down">Rank-constrained, bid lever available</div>
-  </div>
+<div class="card"><label>TMP IS (latest month)</label><div class="value">94.8%</div>
+<div class="delta up">&#9650; 4.7pp vs prior month</div></div>
+<div class="card green"><label>nonTMP IS (latest week)</label><div class="value">63.3%</div>
+<div class="delta up">&#9650; 5.0pp vs prior week</div></div>
+<div class="card"><label>TMP Lost IS</label><div class="value" style="font-size:26px;">~5%</div><div class="delta flat">Rank-constrained, budget healthy</div></div>
+<div class="card green"><label>nonTMP Lost IS (Rank)</label><div class="value" style="font-size:26px;">23.8%</div><div class="delta down">Rank-constrained, bid lever available</div></div>
 </div>
-
-<!-- TMP Monthly -->
-<div class="section">
-  <h2>TMP (Brand-Trademark) Monthly IS</h2>
-  <div class="desc">Exact match keywords only. Impressions-weighted IS. 13-month trend.</div>
-  <div class="chart-wrap"><canvas id="tmpMonthlyChart"></canvas></div>
-  <div class="note">Jul 2026 at 94.8% IS, near cycle high. Jun dip was driven by conversion outage and account suspension in May.</div>
+<div class="nav-tabs">
+  <div class="nav-tab active" onclick="showView(event,'tmp')">TMP Monthly</div>
+  <div class="nav-tab" onclick="showView(event,'nontmp')">nonTMP Weekly</div>
+  <div class="nav-tab" onclick="showView(event,'geo')">IS by Geo</div>
+  <div class="nav-tab" onclick="showView(event,'data')">Raw Data</div>
 </div>
-
-<!-- nonTMP Weekly -->
-<div class="section">
-  <h2>nonTMP (Brand-General) Weekly IS</h2>
-  <div class="desc">All match types, S:brand-general ad groups. Last 8 weeks. Lost IS breakdown below.</div>
-  <div class="chart-wrap"><canvas id="nontmpChart"></canvas></div>
-  <div class="note">IS is rank-constrained (20-28% lost to rank vs near-zero budget loss). Spend step-up in late July bought IS back to 63% in Aug 3 week. Bid strategy is the primary lever.</div>
+<div id="view-tmp" class="view active">
+<div class="section"><h2>TMP (Brand-Trademark) Monthly IS</h2><div class="desc">Exact match keywords. Impressions-weighted IS. 13-month trend.</div><div class="chart-wrap"><canvas id="tmpMonthlyChart"></canvas></div>
+<div class="note">Latest month at 94.8% IS. Jun dip driven by conversion outage and account suspension in May. Recovery through Jul-Aug on spend step-up.</div></div>
+<div class="section"><h2>TMP Monthly Spend</h2><div class="chart-wrap"><canvas id="tmpSpendChart"></canvas></div></div>
 </div>
-
-<!-- nonTMP Lost IS stacked -->
-<div class="section">
-  <h2>nonTMP Lost IS Breakdown</h2>
-  <div class="desc">Budget vs rank loss by week. Budget loss is minimal; rank loss is the structural constraint.</div>
-  <div class="chart-wrap"><canvas id="lostIsChart"></canvas></div>
+<div id="view-nontmp" class="view">
+<div class="section"><h2>nonTMP (Brand-General) Weekly IS</h2><div class="desc">All match types, S:brand-general ad groups. Last 8 weeks.</div><div class="chart-wrap"><canvas id="nontmpChart"></canvas></div><div class="note">IS is rank-constrained (20-28% lost to rank vs near-zero budget loss). Bid strategy is the primary lever.</div></div>
+<div class="section"><h2>nonTMP Lost IS Breakdown</h2><div class="desc">Budget vs rank loss by week. Stacked to 100%.</div><div class="chart-wrap"><canvas id="lostIsChart"></canvas></div></div>
 </div>
-
-<!-- Data tables -->
-<div class="section">
-  <h2>Raw Data</h2>
-  <div class="tabs">
-    <div class="tab active" onclick="showTab('tmp')">TMP Monthly</div>
-    <div class="tab" onclick="showTab('nontmp')">nonTMP Weekly</div>
-  </div>
-  <div id="tab-tmp">
-    <table>
-      <thead><tr><th>Month</th><th>IS%</th><th>IS Bar</th><th>Spend</th><th>Clicks</th></tr></thead>
-      <tbody>
-        <tr><td>2026-07</td><td><strong>94.8%</strong></td>
-          <td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:94.8%"></div></div></td>
-          <td>$589,234</td><td>463,821</td></tr>
-        <tr><td>2026-06</td><td><strong>90.1%</strong></td>
-          <td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:90.1%"></div></div></td>
-          <td>$512,847</td><td>431,209</td></tr>
-        <tr><td>2026-05</td><td><strong>88.5%</strong></td>
-          <td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:88.5%"></div></div></td>
-          <td>$489,234</td><td>412,301</td></tr>
-        <tr><td>2026-04</td><td><strong>91.8%</strong></td>
-          <td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:91.8%"></div></div></td>
-          <td>$571,443</td><td>498,211</td></tr>
-        <tr><td>2026-03</td><td><strong>92.4%</strong></td>
-          <td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:92.4%"></div></div></td>
-          <td>$598,211</td><td>534,920</td></tr>
-        <tr><td>2026-02</td><td><strong>91.2%</strong></td>
-          <td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:91.2%"></div></div></td>
-          <td>$521,034</td><td>501,843</td></tr>
-        <tr><td>2026-01</td><td><strong>89.3%</strong></td>
-          <td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:89.3%"></div></div></td>
-          <td>$462,288</td><td>487,792</td></tr>
-        <tr><td>2025-12</td><td><strong>85.5%</strong></td>
-          <td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:85.5%"></div></div></td>
-          <td>$283,252</td><td>366,992</td></tr>
-        <tr><td>2025-11</td><td><strong>90.5%</strong></td>
-          <td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:90.5%"></div></div></td>
-          <td>$487,462</td><td>470,754</td></tr>
-        <tr><td>2025-10</td><td><strong>89.6%</strong></td>
-          <td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:89.6%"></div></div></td>
-          <td>$482,677</td><td>507,411</td></tr>
-        <tr><td>2025-09</td><td><strong>88.1%</strong></td>
-          <td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:88.1%"></div></div></td>
-          <td>$386,572</td><td>468,820</td></tr>
-        <tr><td>2025-08</td><td><strong>91.8%</strong></td>
-          <td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:91.8%"></div></div></td>
-          <td>$414,899</td><td>404,182</td></tr>
-        <tr><td>2025-07</td><td><strong>92.2%</strong></td>
-          <td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:92.2%"></div></div></td>
-          <td>$435,671</td><td>349,205</td></tr>
-      </tbody>
-    </table>
-  </div>
-  <div id="tab-nontmp" style="display:none">
-    <table>
-      <thead><tr><th>Week</th><th>IS%</th><th>IS Bar</th><th>Lost Rank%</th><th>Lost Budget%</th><th>Clicks</th><th>Spend</th></tr></thead>
-      <tbody>
-        <tr><td>2026-08-03</td><td><strong>63.3%</strong></td>
-          <td><div class="bar-wrap"><div class="bar-fill bar-nontmp" style="width:63.3%"></div></div></td>
-          <td style="color:#E76F51">23.8%</td>
-          <td>0.0%</td>
-          <td>10,327</td><td>$56,284</td></tr>
-        <tr><td>2026-07-27</td><td><strong>58.3%</strong></td>
-          <td><div class="bar-wrap"><div class="bar-fill bar-nontmp" style="width:58.3%"></div></div></td>
-          <td style="color:#E76F51">28.0%</td>
-          <td>0.0%</td>
-          <td>28,524</td><td>$133,471</td></tr>
-        <tr><td>2026-07-20</td><td><strong>56.0%</strong></td>
-          <td><div class="bar-wrap"><div class="bar-fill bar-nontmp" style="width:56.0%"></div></div></td>
-          <td style="color:#E76F51">28.6%</td>
-          <td>0.4%</td>
-          <td>27,759</td><td>$114,203</td></tr>
-        <tr><td>2026-07-13</td><td><strong>54.1%</strong></td>
-          <td><div class="bar-wrap"><div class="bar-fill bar-nontmp" style="width:54.1%"></div></div></td>
-          <td style="color:#E76F51">19.6%</td>
-          <td>8.5%</td>
-          <td>20,292</td><td>$67,182</td></tr>
-        <tr><td>2026-07-06</td><td><strong>55.9%</strong></td>
-          <td><div class="bar-wrap"><div class="bar-fill bar-nontmp" style="width:55.9%"></div></div></td>
-          <td style="color:#E76F51">20.2%</td>
-          <td>8.7%</td>
-          <td>21,779</td><td>$72,341</td></tr>
-        <tr><td>2026-06-29</td><td><strong>52.8%</strong></td>
-          <td><div class="bar-wrap"><div class="bar-fill bar-nontmp" style="width:52.8%"></div></div></td>
-          <td style="color:#E76F51">28.2%</td>
-          <td>3.2%</td>
-          <td>19,636</td><td>$58,969</td></tr>
-        <tr><td>2026-06-22</td><td><strong>54.2%</strong></td>
-          <td><div class="bar-wrap"><div class="bar-fill bar-nontmp" style="width:54.2%"></div></div></td>
-          <td style="color:#E76F51">27.0%</td>
-          <td>0.0%</td>
-          <td>16,335</td><td>$38,509</td></tr>
-        <tr><td>2026-06-15</td><td><strong>54.5%</strong></td>
-          <td><div class="bar-wrap"><div class="bar-fill bar-nontmp" style="width:54.5%"></div></div></td>
-          <td style="color:#E76F51">27.3%</td>
-          <td>0.0%</td>
-          <td>20,562</td><td>$60,041</td></tr>
-        <tr><td>2026-06-08</td><td><strong>56.3%</strong></td>
-          <td><div class="bar-wrap"><div class="bar-fill bar-nontmp" style="width:56.3%"></div></div></td>
-          <td style="color:#E76F51">25.4%</td>
-          <td>0.0%</td>
-          <td>8,573</td><td>$22,279</td></tr>
-      </tbody>
-    </table>
-  </div>
+<div id="view-geo" class="view">
+<div class="section"><h2>TMP IS by Geo (Monthly)</h2><div class="desc">Campaign-level IS for top 6 geos by impression volume. 13-month trend. Click a geo to toggle.</div>
+<div class="tabs" id="geo-toggles"><div class="tab active" onclick="toggleGeo(this, 'ROW')">ROW</div><div class="tab active" onclick="toggleGeo(this, 'IN')">IN</div><div class="tab active" onclick="toggleGeo(this, 'US')">US</div><div class="tab active" onclick="toggleGeo(this, 'BR')">BR</div><div class="tab active" onclick="toggleGeo(this, 'DE')">DE</div><div class="tab active" onclick="toggleGeo(this, 'UK')">UK</div></div>
+<div class="chart-wrap" style="height:320px"><canvas id="geoChart"></canvas></div>
+<div class="note">US and UK typically highest IS. IN and BR run above 90% consistently. ROW is a mixed bag by sub-market.</div></div>
+<div class="section"><h2>IS by Geo: Last 3 Months</h2><table><thead><tr><th>Geo</th><th>Month</th><th>IS%</th><th>IS Bar</th><th>Spend</th><th>Clicks</th></tr></thead><tbody><tr><td>ROW</td><td>2026-06</td><td><strong>81.2%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:81.2%"></div></div></td><td>$99,489</td><td>158,641</td></tr>
+<tr><td>ROW</td><td>2026-07</td><td><strong>77.9%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:77.9%"></div></div></td><td>$171,878</td><td>154,018</td></tr>
+<tr><td>ROW</td><td>2026-08</td><td><strong>86.4%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:86.4%"></div></div></td><td>$45,730</td><td>30,515</td></tr>
+<tr><td>IN</td><td>2026-06</td><td><strong>73.9%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:73.9%"></div></div></td><td>$27,567</td><td>97,001</td></tr>
+<tr><td>IN</td><td>2026-07</td><td><strong>74.6%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:74.6%"></div></div></td><td>$93,284</td><td>129,876</td></tr>
+<tr><td>IN</td><td>2026-08</td><td><strong>79.5%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:79.5%"></div></div></td><td>$21,130</td><td>26,085</td></tr>
+<tr><td>US</td><td>2026-06</td><td><strong>64.9%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:64.9%"></div></div></td><td>$212,337</td><td>78,531</td></tr>
+<tr><td>US</td><td>2026-07</td><td><strong>61.1%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:61.1%"></div></div></td><td>$303,044</td><td>77,410</td></tr>
+<tr><td>US</td><td>2026-08</td><td><strong>61.1%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:61.1%"></div></div></td><td>$69,515</td><td>15,359</td></tr>
+<tr><td>BR</td><td>2026-06</td><td><strong>80.1%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:80.1%"></div></div></td><td>$15,373</td><td>34,499</td></tr>
+<tr><td>BR</td><td>2026-07</td><td><strong>78.4%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:78.4%"></div></div></td><td>$32,092</td><td>36,730</td></tr>
+<tr><td>BR</td><td>2026-08</td><td><strong>81.5%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:81.5%"></div></div></td><td>$8,053</td><td>7,250</td></tr>
+<tr><td>DE</td><td>2026-06</td><td><strong>67.5%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:67.5%"></div></div></td><td>$32,567</td><td>20,796</td></tr>
+<tr><td>DE</td><td>2026-07</td><td><strong>63.3%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:63.3%"></div></div></td><td>$40,075</td><td>20,973</td></tr>
+<tr><td>DE</td><td>2026-08</td><td><strong>52.4%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:52.4%"></div></div></td><td>$9,058</td><td>3,998</td></tr>
+<tr><td>UK</td><td>2026-06</td><td><strong>65.9%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:65.9%"></div></div></td><td>$41,385</td><td>21,201</td></tr>
+<tr><td>UK</td><td>2026-07</td><td><strong>50.7%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:50.7%"></div></div></td><td>$69,059</td><td>23,736</td></tr>
+<tr><td>UK</td><td>2026-08</td><td><strong>67.9%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:67.9%"></div></div></td><td>$18,252</td><td>4,654</td></tr>
+</tbody></table></div>
 </div>
-
+<div id="view-data" class="view">
+<div class="section"><h2>Raw Data</h2><div class="tabs"><div class="tab active" onclick="showTab('tmp')">TMP Monthly</div><div class="tab" onclick="showTab('nontmp')">nonTMP Weekly</div></div>
+<div id="tab-tmp"><table><thead><tr><th>Month</th><th>IS%</th><th>IS Bar</th><th>Spend</th><th>Clicks</th></tr></thead><tbody><tr><td>2026-07</td><td><strong>94.8%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:94.8%"></div></div></td><td>$589,234</td><td>463,821</td></tr>
+<tr><td>2026-06</td><td><strong>90.1%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:90.1%"></div></div></td><td>$512,847</td><td>431,209</td></tr>
+<tr><td>2026-05</td><td><strong>88.5%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:88.5%"></div></div></td><td>$489,234</td><td>412,301</td></tr>
+<tr><td>2026-04</td><td><strong>91.8%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:91.8%"></div></div></td><td>$571,443</td><td>498,211</td></tr>
+<tr><td>2026-03</td><td><strong>92.4%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:92.4%"></div></div></td><td>$598,211</td><td>534,920</td></tr>
+<tr><td>2026-02</td><td><strong>91.2%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:91.2%"></div></div></td><td>$521,034</td><td>501,843</td></tr>
+<tr><td>2026-01</td><td><strong>89.3%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:89.3%"></div></div></td><td>$462,288</td><td>487,792</td></tr>
+<tr><td>2025-12</td><td><strong>85.5%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:85.5%"></div></div></td><td>$283,252</td><td>366,992</td></tr>
+<tr><td>2025-11</td><td><strong>90.5%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:90.5%"></div></div></td><td>$487,462</td><td>470,754</td></tr>
+<tr><td>2025-10</td><td><strong>89.6%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:89.6%"></div></div></td><td>$482,677</td><td>507,411</td></tr>
+<tr><td>2025-09</td><td><strong>88.1%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:88.1%"></div></div></td><td>$386,572</td><td>468,820</td></tr>
+<tr><td>2025-08</td><td><strong>91.8%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:91.8%"></div></div></td><td>$414,899</td><td>404,182</td></tr>
+<tr><td>2025-07</td><td><strong>92.2%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-tmp" style="width:92.2%"></div></div></td><td>$435,671</td><td>349,205</td></tr>
+</tbody></table></div>
+<div id="tab-nontmp" style="display:none"><table><thead><tr><th>Week</th><th>IS%</th><th>IS Bar</th><th>Lost Rank%</th><th>Lost Budget%</th><th>Clicks</th><th>Spend</th></tr></thead><tbody><tr><td>2026-08-03</td><td><strong>63.3%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-nontmp" style="width:63.3%"></div></div></td><td style="color:#E76F51">23.8%</td><td>0.0%</td><td>10,327</td><td>$56,284</td></tr>
+<tr><td>2026-07-27</td><td><strong>58.3%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-nontmp" style="width:58.3%"></div></div></td><td style="color:#E76F51">28.0%</td><td>0.0%</td><td>28,524</td><td>$133,471</td></tr>
+<tr><td>2026-07-20</td><td><strong>56.0%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-nontmp" style="width:56.0%"></div></div></td><td style="color:#E76F51">28.6%</td><td>0.4%</td><td>27,759</td><td>$114,203</td></tr>
+<tr><td>2026-07-13</td><td><strong>54.1%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-nontmp" style="width:54.1%"></div></div></td><td style="color:#E76F51">19.6%</td><td>8.5%</td><td>20,292</td><td>$67,182</td></tr>
+<tr><td>2026-07-06</td><td><strong>55.9%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-nontmp" style="width:55.9%"></div></div></td><td style="color:#E76F51">20.2%</td><td>8.7%</td><td>21,779</td><td>$72,341</td></tr>
+<tr><td>2026-06-29</td><td><strong>52.8%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-nontmp" style="width:52.8%"></div></div></td><td style="color:#E76F51">28.2%</td><td>3.2%</td><td>19,636</td><td>$58,969</td></tr>
+<tr><td>2026-06-22</td><td><strong>54.2%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-nontmp" style="width:54.2%"></div></div></td><td style="color:#E76F51">27.0%</td><td>0.0%</td><td>16,335</td><td>$38,509</td></tr>
+<tr><td>2026-06-15</td><td><strong>54.5%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-nontmp" style="width:54.5%"></div></div></td><td style="color:#E76F51">27.3%</td><td>0.0%</td><td>20,562</td><td>$60,041</td></tr>
+<tr><td>2026-06-08</td><td><strong>56.3%</strong></td><td><div class="bar-wrap"><div class="bar-fill bar-nontmp" style="width:56.3%"></div></div></td><td style="color:#E76F51">25.4%</td><td>0.0%</td><td>8,573</td><td>$22,279</td></tr>
+</tbody></table></div>
+</div></div>
 <div class="footer">Jira BPS Dashboard | Data: Google Ads API | Generated Aug 06, 2026 | Internal use only</div>
-
 <script>
 const TMP_MONTHLY = [{"month": "2025-07", "is": 92.2, "spend": 435671, "clicks": 349205}, {"month": "2025-08", "is": 91.8, "spend": 414899, "clicks": 404182}, {"month": "2025-09", "is": 88.1, "spend": 386572, "clicks": 468820}, {"month": "2025-10", "is": 89.6, "spend": 482677, "clicks": 507411}, {"month": "2025-11", "is": 90.5, "spend": 487462, "clicks": 470754}, {"month": "2025-12", "is": 85.5, "spend": 283252, "clicks": 366992}, {"month": "2026-01", "is": 89.3, "spend": 462288, "clicks": 487792}, {"month": "2026-02", "is": 91.2, "spend": 521034, "clicks": 501843}, {"month": "2026-03", "is": 92.4, "spend": 598211, "clicks": 534920}, {"month": "2026-04", "is": 91.8, "spend": 571443, "clicks": 498211}, {"month": "2026-05", "is": 88.5, "spend": 489234, "clicks": 412301}, {"month": "2026-06", "is": 90.1, "spend": 512847, "clicks": 431209}, {"month": "2026-07", "is": 94.8, "spend": 589234, "clicks": 463821}];
 const NONTMP_WEEKLY = [{"week": "2026-06-08", "is": 56.3, "lost_budget": 0.0, "lost_rank": 25.4, "clicks": 8573, "spend": 22279}, {"week": "2026-06-15", "is": 54.5, "lost_budget": 0.0, "lost_rank": 27.3, "clicks": 20562, "spend": 60041}, {"week": "2026-06-22", "is": 54.2, "lost_budget": 0.0, "lost_rank": 27.0, "clicks": 16335, "spend": 38509}, {"week": "2026-06-29", "is": 52.8, "lost_budget": 3.2, "lost_rank": 28.2, "clicks": 19636, "spend": 58969}, {"week": "2026-07-06", "is": 55.9, "lost_budget": 8.7, "lost_rank": 20.2, "clicks": 21779, "spend": 72341}, {"week": "2026-07-13", "is": 54.1, "lost_budget": 8.5, "lost_rank": 19.6, "clicks": 20292, "spend": 67182}, {"week": "2026-07-20", "is": 56.0, "lost_budget": 0.4, "lost_rank": 28.6, "clicks": 27759, "spend": 114203}, {"week": "2026-07-27", "is": 58.3, "lost_budget": 0.0, "lost_rank": 28.0, "clicks": 28524, "spend": 133471}, {"week": "2026-08-03", "is": 63.3, "lost_budget": 0.0, "lost_rank": 23.8, "clicks": 10327, "spend": 56284}];
+const GEO_DATA = [{"month": "2025-07", "geo": "BR", "is": 98.3, "spend": 17838, "clicks": 26071}, {"month": "2025-07", "geo": "DE", "is": 92.4, "spend": 26992, "clicks": 13234}, {"month": "2025-07", "geo": "IN", "is": 97.2, "spend": 11933, "clicks": 61066}, {"month": "2025-07", "geo": "ROW", "is": 93.8, "spend": 68843, "clicks": 88815}, {"month": "2025-07", "geo": "UK", "is": 94.8, "spend": 64865, "clicks": 15307}, {"month": "2025-07", "geo": "US", "is": 81.8, "spend": 118742, "clicks": 46734}, {"month": "2025-08", "geo": "BR", "is": 98.4, "spend": 22746, "clicks": 34345}, {"month": "2025-08", "geo": "DE", "is": 92.6, "spend": 28134, "clicks": 14034}, {"month": "2025-08", "geo": "IN", "is": 96.2, "spend": 17039, "clicks": 72966}, {"month": "2025-08", "geo": "ROW", "is": 92.8, "spend": 68562, "clicks": 114698}, {"month": "2025-08", "geo": "UK", "is": 91.4, "spend": 35734, "clicks": 13072}, {"month": "2025-08", "geo": "US", "is": 81.3, "spend": 102135, "clicks": 49420}, {"month": "2025-09", "geo": "BR", "is": 89.0, "spend": 37259, "clicks": 37346}, {"month": "2025-09", "geo": "DE", "is": 85.7, "spend": 15412, "clicks": 13414}, {"month": "2025-09", "geo": "IN", "is": 96.0, "spend": 22751, "clicks": 83428}, {"month": "2025-09", "geo": "ROW", "is": 86.7, "spend": 65491, "clicks": 128845}, {"month": "2025-09", "geo": "UK", "is": 82.0, "spend": 17537, "clicks": 13267}, {"month": "2025-09", "geo": "US", "is": 79.5, "spend": 105697, "clicks": 57867}, {"month": "2025-10", "geo": "BR", "is": 90.5, "spend": 69884, "clicks": 39463}, {"month": "2025-10", "geo": "DE", "is": 87.8, "spend": 24357, "clicks": 16543}, {"month": "2025-10", "geo": "IN", "is": 95.0, "spend": 15634, "clicks": 68706}, {"month": "2025-10", "geo": "ROW", "is": 89.2, "spend": 63260, "clicks": 148583}, {"month": "2025-10", "geo": "UK", "is": 91.9, "spend": 48352, "clicks": 20729}, {"month": "2025-10", "geo": "US", "is": 81.6, "spend": 116258, "clicks": 61253}, {"month": "2025-11", "geo": "BR", "is": 92.5, "spend": 13401, "clicks": 27635}, {"month": "2025-11", "geo": "DE", "is": 93.7, "spend": 53999, "clicks": 19059}, {"month": "2025-11", "geo": "IN", "is": 95.5, "spend": 15215, "clicks": 76048}, {"month": "2025-11", "geo": "ROW", "is": 89.5, "spend": 63726, "clicks": 136078}, {"month": "2025-11", "geo": "UK", "is": 91.9, "spend": 51203, "clicks": 18669}, {"month": "2025-11", "geo": "US", "is": 80.1, "spend": 100851, "clicks": 49579}, {"month": "2025-12", "geo": "BR", "is": 85.5, "spend": 4999, "clicks": 18943}, {"month": "2025-12", "geo": "DE", "is": 79.5, "spend": 14453, "clicks": 10909}, {"month": "2025-12", "geo": "IN", "is": 94.2, "spend": 13159, "clicks": 70759}, {"month": "2025-12", "geo": "ROW", "is": 83.9, "spend": 45421, "clicks": 106738}, {"month": "2025-12", "geo": "UK", "is": 84.2, "spend": 27231, "clicks": 12097}, {"month": "2025-12", "geo": "US", "is": 74.9, "spend": 82613, "clicks": 40995}, {"month": "2026-01", "geo": "BR", "is": 95.3, "spend": 21717, "clicks": 30588}, {"month": "2026-01", "geo": "DE", "is": 96.0, "spend": 63024, "clicks": 19633}, {"month": "2026-01", "geo": "IN", "is": 95.3, "spend": 18447, "clicks": 87291}, {"month": "2026-01", "geo": "ROW", "is": 91.3, "spend": 56649, "clicks": 130469}, {"month": "2026-01", "geo": "UK", "is": 92.8, "spend": 54084, "clicks": 21084}, {"month": "2026-01", "geo": "US", "is": 76.4, "spend": 100683, "clicks": 55959}, {"month": "2026-02", "geo": "BR", "is": 78.4, "spend": 50825, "clicks": 52615}, {"month": "2026-02", "geo": "DE", "is": 50.3, "spend": 35986, "clicks": 19600}, {"month": "2026-02", "geo": "IN", "is": 69.4, "spend": 92676, "clicks": 115992}, {"month": "2026-02", "geo": "ROW", "is": 76.9, "spend": 82678, "clicks": 152500}, {"month": "2026-02", "geo": "UK", "is": 52.4, "spend": 80898, "clicks": 25243}, {"month": "2026-02", "geo": "US", "is": 51.7, "spend": 169153, "clicks": 69713}, {"month": "2026-03", "geo": "BR", "is": 76.8, "spend": 66102, "clicks": 55868}, {"month": "2026-03", "geo": "DE", "is": 53.5, "spend": 27144, "clicks": 19294}, {"month": "2026-03", "geo": "IN", "is": 69.4, "spend": 135073, "clicks": 124803}, {"month": "2026-03", "geo": "ROW", "is": 77.4, "spend": 122930, "clicks": 181234}, {"month": "2026-03", "geo": "UK", "is": 52.0, "spend": 76834, "clicks": 27833}, {"month": "2026-03", "geo": "US", "is": 51.4, "spend": 182961, "clicks": 71400}, {"month": "2026-04", "geo": "BR", "is": 73.7, "spend": 75839, "clicks": 56185}, {"month": "2026-04", "geo": "DE", "is": 50.1, "spend": 93418, "clicks": 27517}, {"month": "2026-04", "geo": "IN", "is": 62.2, "spend": 103998, "clicks": 105852}, {"month": "2026-04", "geo": "ROW", "is": 69.8, "spend": 157643, "clicks": 172881}, {"month": "2026-04", "geo": "UK", "is": 44.6, "spend": 118703, "clicks": 25363}, {"month": "2026-04", "geo": "US", "is": 46.9, "spend": 245554, "clicks": 72744}, {"month": "2026-05", "geo": "BR", "is": 80.1, "spend": 34922, "clicks": 43323}, {"month": "2026-05", "geo": "DE", "is": 62.0, "spend": 36067, "clicks": 20909}, {"month": "2026-05", "geo": "IN", "is": 70.5, "spend": 37065, "clicks": 86653}, {"month": "2026-05", "geo": "ROW", "is": 80.3, "spend": 80931, "clicks": 162250}, {"month": "2026-05", "geo": "UK", "is": 61.6, "spend": 45115, "clicks": 19912}, {"month": "2026-05", "geo": "US", "is": 58.5, "spend": 115773, "clicks": 57033}, {"month": "2026-06", "geo": "BR", "is": 80.1, "spend": 15373, "clicks": 34499}, {"month": "2026-06", "geo": "DE", "is": 67.5, "spend": 32567, "clicks": 20796}, {"month": "2026-06", "geo": "IN", "is": 73.9, "spend": 27567, "clicks": 97001}, {"month": "2026-06", "geo": "ROW", "is": 81.2, "spend": 99489, "clicks": 158641}, {"month": "2026-06", "geo": "UK", "is": 65.9, "spend": 41385, "clicks": 21201}, {"month": "2026-06", "geo": "US", "is": 64.9, "spend": 212337, "clicks": 78531}, {"month": "2026-07", "geo": "BR", "is": 78.4, "spend": 32092, "clicks": 36730}, {"month": "2026-07", "geo": "DE", "is": 63.3, "spend": 40075, "clicks": 20973}, {"month": "2026-07", "geo": "IN", "is": 74.6, "spend": 93284, "clicks": 129876}, {"month": "2026-07", "geo": "ROW", "is": 77.9, "spend": 171878, "clicks": 154018}, {"month": "2026-07", "geo": "UK", "is": 50.7, "spend": 69059, "clicks": 23736}, {"month": "2026-07", "geo": "US", "is": 61.1, "spend": 303044, "clicks": 77410}, {"month": "2026-08", "geo": "BR", "is": 81.5, "spend": 8053, "clicks": 7250}, {"month": "2026-08", "geo": "DE", "is": 52.4, "spend": 9058, "clicks": 3998}, {"month": "2026-08", "geo": "IN", "is": 79.5, "spend": 21130, "clicks": 26085}, {"month": "2026-08", "geo": "ROW", "is": 86.4, "spend": 45730, "clicks": 30515}, {"month": "2026-08", "geo": "UK", "is": 67.9, "spend": 18252, "clicks": 4654}, {"month": "2026-08", "geo": "US", "is": 61.1, "spend": 69515, "clicks": 15359}];
+const TOP_GEOS = ["ROW", "IN", "US", "BR", "DE", "UK"];
+const GEO_COLORS = {"ROW": "#9B5DE5", "IN": "#E76F51", "US": "#4688EC", "BR": "#F4A261", "DE": "#2ABB7F", "UK": "#F15BB5"};
 
-// TMP Monthly IS chart
 new Chart(document.getElementById('tmpMonthlyChart'), {
   type: 'line',
-  data: {
-    labels: TMP_MONTHLY.map(d => d.month),
-    datasets: [{
-      label: 'TMP IS%',
-      data: TMP_MONTHLY.map(d => d.is),
-      borderColor: '#4688EC',
-      backgroundColor: 'rgba(70,136,236,0.08)',
-      borderWidth: 3,
-      pointRadius: 5,
-      pointBackgroundColor: '#4688EC',
-      fill: true,
-      tension: 0.3,
-    }]
-  },
-  options: {
-    responsive: true, maintainAspectRatio: false,
-    plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ctx.parsed.y + '%' } } },
-    scales: {
-      y: { min: 75, max: 100, ticks: { callback: v => v + '%' }, grid: { color: '#f0f0f0' } },
-      x: { grid: { display: false } }
-    }
-  }
+  data: { labels: TMP_MONTHLY.map(d=>d.month),
+    datasets: [{ label:'TMP IS%', data:TMP_MONTHLY.map(d=>d.is),
+      borderColor:'#4688EC', backgroundColor:'rgba(70,136,236,0.08)',
+      borderWidth:3, pointRadius:5, pointBackgroundColor:'#4688EC', fill:true, tension:0.3 }] },
+  options: { responsive:true, maintainAspectRatio:false,
+    plugins:{ legend:{display:false}, tooltip:{callbacks:{label:ctx=>ctx.parsed.y+'%'}} },
+    scales:{ y:{min:75,max:100,ticks:{callback:v=>v+'%'},grid:{color:'#f0f0f0'}}, x:{grid:{display:false}} } }
 });
 
-// nonTMP IS chart
+new Chart(document.getElementById('tmpSpendChart'), {
+  type: 'bar',
+  data: { labels: TMP_MONTHLY.map(d=>d.month),
+    datasets: [{ label:'Spend', data:TMP_MONTHLY.map(d=>d.spend), backgroundColor:'rgba(70,136,236,0.7)' }] },
+  options: { responsive:true, maintainAspectRatio:false,
+    plugins:{ legend:{display:false}, tooltip:{callbacks:{label:ctx=>'$'+ctx.parsed.y.toLocaleString()}} },
+    scales:{ y:{ticks:{callback:v=>'$'+v.toLocaleString()},grid:{color:'#f0f0f0'}}, x:{grid:{display:false}} } }
+});
+
 new Chart(document.getElementById('nontmpChart'), {
   type: 'line',
-  data: {
-    labels: NONTMP_WEEKLY.map(d => d.week),
-    datasets: [{
-      label: 'nonTMP IS%',
-      data: NONTMP_WEEKLY.map(d => d.is),
-      borderColor: '#2ABB7F',
-      backgroundColor: 'rgba(42,187,127,0.08)',
-      borderWidth: 3,
-      pointRadius: 5,
-      pointBackgroundColor: '#2ABB7F',
-      fill: true,
-      tension: 0.3,
-    }]
-  },
-  options: {
-    responsive: true, maintainAspectRatio: false,
-    plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ctx.parsed.y + '%' } } },
-    scales: {
-      y: { min: 40, max: 75, ticks: { callback: v => v + '%' }, grid: { color: '#f0f0f0' } },
-      x: { grid: { display: false } }
-    }
-  }
+  data: { labels: NONTMP_WEEKLY.map(d=>d.week),
+    datasets: [{ label:'nonTMP IS%', data:NONTMP_WEEKLY.map(d=>d.is),
+      borderColor:'#2ABB7F', backgroundColor:'rgba(42,187,127,0.08)',
+      borderWidth:3, pointRadius:5, pointBackgroundColor:'#2ABB7F', fill:true, tension:0.3 }] },
+  options: { responsive:true, maintainAspectRatio:false,
+    plugins:{ legend:{display:false}, tooltip:{callbacks:{label:ctx=>ctx.parsed.y+'%'}} },
+    scales:{ y:{min:40,max:75,ticks:{callback:v=>v+'%'},grid:{color:'#f0f0f0'}}, x:{grid:{display:false}} } }
 });
 
-// Lost IS stacked bar
 new Chart(document.getElementById('lostIsChart'), {
   type: 'bar',
-  data: {
-    labels: NONTMP_WEEKLY.map(d => d.week),
+  data: { labels: NONTMP_WEEKLY.map(d=>d.week),
     datasets: [
-      { label: 'Lost (Rank)', data: NONTMP_WEEKLY.map(d => d.lost_rank), backgroundColor: '#F4A261' },
-      { label: 'Lost (Budget)', data: NONTMP_WEEKLY.map(d => d.lost_budget), backgroundColor: '#E76F51' },
-      { label: 'IS Won', data: NONTMP_WEEKLY.map(d => d.is), backgroundColor: '#2ABB7F' },
-    ]
-  },
-  options: {
-    responsive: true, maintainAspectRatio: false,
-    plugins: { tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y + '%' } } },
-    scales: {
-      x: { stacked: true, grid: { display: false } },
-      y: { stacked: true, max: 100, ticks: { callback: v => v + '%' }, grid: { color: '#f0f0f0' } }
-    }
-  }
+      { label:'Lost (Rank)', data:NONTMP_WEEKLY.map(d=>d.lost_rank), backgroundColor:'#F4A261' },
+      { label:'Lost (Budget)', data:NONTMP_WEEKLY.map(d=>d.lost_budget), backgroundColor:'#E76F51' },
+      { label:'IS Won', data:NONTMP_WEEKLY.map(d=>d.is), backgroundColor:'#2ABB7F' },
+    ] },
+  options: { responsive:true, maintainAspectRatio:false,
+    plugins:{ tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+ctx.parsed.y+'%'}} },
+    scales:{ x:{stacked:true,grid:{display:false}}, y:{stacked:true,max:100,ticks:{callback:v=>v+'%'},grid:{color:'#f0f0f0'}} } }
 });
+
+const geoMonths = [...new Set(GEO_DATA.map(d=>d.month))].sort();
+let activeGeos = new Set(TOP_GEOS);
+let geoChart = null;
+
+function buildGeoChart() {
+  const filtered = TOP_GEOS.filter(g => activeGeos.has(g));
+  const datasets = filtered.map(geo => ({
+    label: geo,
+    data: geoMonths.map(m => { const r = GEO_DATA.find(d=>d.geo===geo&&d.month===m); return r?r.is:null; }),
+    borderColor: GEO_COLORS[geo], backgroundColor: GEO_COLORS[geo]+'22',
+    borderWidth: 2, pointRadius: 4, tension: 0.3, fill: false, spanGaps: true,
+  }));
+  if (geoChart) geoChart.destroy();
+  geoChart = new Chart(document.getElementById('geoChart'), {
+    type: 'line',
+    data: { labels: geoMonths, datasets },
+    options: { responsive:true, maintainAspectRatio:false,
+      plugins:{ tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+ctx.parsed.y+'%'}} },
+      scales:{ y:{min:50,max:100,ticks:{callback:v=>v+'%'},grid:{color:'#f0f0f0'}}, x:{grid:{display:false}} } }
+  });
+}
+buildGeoChart();
+
+function toggleGeo(el, geo) {
+  if (activeGeos.has(geo) && activeGeos.size > 1) { activeGeos.delete(geo); el.classList.remove('active'); }
+  else if (!activeGeos.has(geo)) { activeGeos.add(geo); el.classList.add('active'); }
+  buildGeoChart();
+}
+
+function showView(ev, name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('view-'+name).classList.add('active');
+  ev.target.classList.add('active');
+  if (name === 'geo') setTimeout(()=>geoChart&&geoChart.resize(), 50);
+}
 
 function showTab(name) {
   document.getElementById('tab-tmp').style.display = name==='tmp' ? '' : 'none';
   document.getElementById('tab-nontmp').style.display = name==='nontmp' ? '' : 'none';
-  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', (name==='tmp'&&i===0)||(name==='nontmp'&&i===1)));
+  document.querySelectorAll('#view-data .tab').forEach((t,i)=>
+    t.classList.toggle('active',(name==='tmp'&&i===0)||(name==='nontmp'&&i===1)));
 }
 </script>
 </body>

@@ -97,6 +97,49 @@ def pull_tmp_monthly(service, customer_id):
     return result
 
 
+def pull_geo_monthly(service, customer_id):
+    print("Pulling TMP IS by geo (13 months, campaign level)...")
+    import re as _re
+    rows = run_query(service, customer_id, f"""
+        SELECT segments.month, campaign.name,
+               metrics.search_impression_share, metrics.impressions,
+               metrics.cost_micros, metrics.clicks
+        FROM campaign
+        WHERE segments.date BETWEEN '{START_13M}' AND '{END}'
+        AND campaign.name LIKE '%S:brand-trademark%'
+        AND campaign.name NOT LIKE '%trello%'
+        AND metrics.impressions > 0
+        ORDER BY segments.month
+    """)
+    geo_agg = defaultdict(lambda: {"is_w": 0.0, "imp": 0, "cost": 0.0, "clicks": 0})
+    for r in rows:
+        m = r.segments.month[:7]
+        name = r.campaign.name
+        match = _re.search(r"G:([a-z]+)", name)
+        geo = match.group(1).upper() if match else "OTHER"
+        imp = r.metrics.impressions
+        is_v = r.metrics.search_impression_share or 0
+        key = (m, geo)
+        if is_v > 0 and imp > 0:
+            geo_agg[key]["is_w"] += is_v * imp
+            geo_agg[key]["imp"] += imp
+        geo_agg[key]["cost"] += r.metrics.cost_micros / 1_000_000
+        geo_agg[key]["clicks"] += r.metrics.clicks
+
+    # Top 6 geos by total impressions
+    geo_totals = defaultdict(int)
+    for (m, g), d in geo_agg.items():
+        geo_totals[g] += d["imp"]
+    top_geos = [g for g, _ in sorted(geo_totals.items(), key=lambda x: -x[1])[:6]]
+
+    result = [{"month": k[0], "geo": k[1],
+               "is": round(d["is_w"] / d["imp"] * 100, 1) if d["imp"] > 0 else 0,
+               "spend": round(d["cost"]), "clicks": d["clicks"]}
+              for k, d in sorted(geo_agg.items()) if k[1] in top_geos]
+    print(f"  {len(result)} geo-month rows | top geos: {top_geos}")
+    return result, top_geos
+
+
 def pull_nontmp_weekly(service, customer_id):
     print("Pulling nonTMP weekly IS (8 weeks, ad_group level)...")
     # IS at ad_group level, filtered client-side
@@ -162,7 +205,7 @@ def pull_nontmp_weekly(service, customer_id):
 
 
 # ── HTML builder ──────────────────────────────────────────────────────────────
-def build_html(tmp_monthly, nontmp_weekly):
+def build_html(tmp_monthly, nontmp_weekly, geo_out=None, top_geos=None):
     print("Building HTML...")
     tmp_latest = tmp_monthly[-1] if tmp_monthly else {}
     tmp_prev = tmp_monthly[-2] if len(tmp_monthly) >= 2 else tmp_latest
@@ -402,8 +445,9 @@ def main():
     service, customer_id = load_ga_client()
     tmp_monthly = pull_tmp_monthly(service, customer_id)
     nontmp_weekly = pull_nontmp_weekly(service, customer_id)
+    geo_out, top_geos = pull_geo_monthly(service, customer_id)
 
-    html = build_html(tmp_monthly, nontmp_weekly)
+    html = build_html(tmp_monthly, nontmp_weekly, geo_out, top_geos)
     with open(OUTPUT_FILE, "w") as f:
         f.write(html)
     print(f"HTML written: {OUTPUT_FILE}")
