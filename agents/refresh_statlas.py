@@ -95,13 +95,18 @@ def pull_tmp_monthly_by_keyword(service, customer_id):
         m = _re.search(r"L:([a-z]+)", ag_name)
         return m.group(1) if m else "other"
 
+    def parse_geo(ag_name):
+        m = _re.search(r"G:([a-z]+)", ag_name)
+        return m.group(1).upper() if m else "OTHER"
+
     for r in rows:
         m = r.segments.month[:7]
         kw = normalize_kw(r.ad_group_criterion.keyword.text)
         lang = parse_lang(r.ad_group.name)
+        geo = parse_geo(r.ad_group.name)
         imp = r.metrics.impressions
         is_v = r.metrics.search_impression_share or 0
-        key = (kw, lang)
+        key = (kw, lang, geo)
         if is_v > 0 and imp > 0:
             agg[m][key]["is_w"] += is_v * imp
             agg[m][key]["imp"] += imp
@@ -109,11 +114,12 @@ def pull_tmp_monthly_by_keyword(service, customer_id):
         agg[m][key]["cost"] += r.metrics.cost_micros / 1_000_000
     records = []
     for m in sorted(agg.keys()):
-        for (kw, lang), d in agg[m].items():
+        for (kw, lang, geo), d in agg[m].items():
             records.append({
                 "month": m,
                 "keyword": kw,
                 "lang": lang,
+                "geo": geo,
                 "spend": round(d["cost"]),
                 "clicks": d["clicks"],
                 "is": round(d["is_w"] / d["imp"] * 100, 1) if d["imp"] > 0 else 0,
@@ -501,8 +507,10 @@ const NONTMP_MONTHLY = {json.dumps(nontmp_monthly or [])};
 // ── Keyword + Language filter setup ──
 const allKeywords = [...new Set(TMP_BY_KW.map(d => d.keyword))].sort();
 const allLangs = [...new Set(TMP_BY_KW.map(d => d.lang))].sort();
+const allGeos = [...new Set(TMP_BY_KW.map(d => d.geo))].sort();
 let selectedKeywords = new Set(allKeywords);
 let selectedLangs = new Set(allLangs);
+let selectedGeos = new Set(allGeos);
 
 function buildKwFilter() {{
   const wrap = document.getElementById('kw-filter');
@@ -522,6 +530,14 @@ function buildKwFilter() {{
     allLangs.map(l =>
       `<label style="margin-left:8px;font-size:12px;cursor:pointer;white-space:nowrap">` +
       `<input type="checkbox" class="lang-cb" value="${{l}}" checked onchange="updateLangFilter()"> ${{l}}</label>`
+    ).join('') +
+    '<span style="margin-left:16px;margin-right:4px;color:#aaa">|</span>' +
+    '<strong style="font-size:13px;color:#333">Geo:</strong> ' +
+    '<label style="margin-left:8px;font-size:12px;cursor:pointer">' +
+    '<input type="checkbox" id="geo-all" checked onchange="toggleAllGeo(this.checked)"> All</label> ' +
+    allGeos.map(g =>
+      `<label style="margin-left:8px;font-size:12px;cursor:pointer;white-space:nowrap">` +
+      `<input type="checkbox" class="geo-cb" value="${{g}}" checked onchange="updateGeoFilter()"> ${{g}}</label>`
     ).join('');
 }}
 
@@ -549,8 +565,20 @@ function updateLangFilter() {{
   renderTmpChart();
 }}
 
+function toggleAllGeo(checked) {{
+  document.querySelectorAll('.geo-cb').forEach(cb => cb.checked = checked);
+  selectedGeos = checked ? new Set(allGeos) : new Set();
+  renderTmpChart();
+}}
+
+function updateGeoFilter() {{
+  selectedGeos = new Set([...document.querySelectorAll('.geo-cb:checked')].map(cb => cb.value));
+  document.getElementById('geo-all').checked = selectedGeos.size === allGeos.length;
+  renderTmpChart();
+}}
+
 function getRolledUp() {{
-  const filtered = TMP_BY_KW.filter(d => selectedKeywords.has(d.keyword) && selectedLangs.has(d.lang));
+  const filtered = TMP_BY_KW.filter(d => selectedKeywords.has(d.keyword) && selectedLangs.has(d.lang) && selectedGeos.has(d.geo));
   const byMonth = {{}};
   filtered.forEach(d => {{
     if (!byMonth[d.month]) byMonth[d.month] = {{is_w: 0, imp: 0, spend: 0, clicks: 0}};
