@@ -202,6 +202,42 @@ def pull_geo_monthly(service, customer_id):
     return result, top_geos
 
 
+SOCRATES_MONTHLY_SEED = [
+    ["2025-06", 378004, 53648, 8654, 581968],
+    ["2025-07", 417000, 50879, 9299, 594951],
+    ["2025-08", 397919, 54351, 9700, 477689],
+    ["2025-09", 455445, 67154, 11924, 450408],
+    ["2025-10", 473299, 70075, 11530, 547843],
+    ["2025-11", 452369, 69825, 11368, 553788],
+    ["2025-12", 391116, 56317, 9216, 347640],
+    ["2026-01", 476595, 69689, 13376, 544580],
+    ["2026-02", 557728, 60413, 14334, 817039],
+    ["2026-03", 655877, 64904, 15024, 956226],
+    ["2026-04", 632554, 64669, 14179, 1295107],
+    ["2026-05", 561790, 32488, 11243, 614473],
+    ["2026-06", 585832, 26554, 9346, 666816],
+]
+
+
+def pull_bd16():
+    """Return BD1-6, Biz Signups, Signups, CPBD1-6 from seed data."""
+    print("Loading BD1-6 seed data...")
+    records = []
+    for row in SOCRATES_MONTHLY_SEED:
+        month, signups, biz_signups, bd1_6, spend = row
+        cpbd = round(spend / bd1_6) if bd1_6 > 0 else 0
+        records.append({
+            "month": month,
+            "signups": signups,
+            "biz_signups": biz_signups,
+            "bd1_6": bd1_6,
+            "spend": spend,
+            "cpbd1_6": cpbd,
+        })
+    print(f"  {len(records)} months")
+    return records
+
+
 def pull_nontmp_monthly(service, customer_id):
     """nonTMP (Brand-General) monthly aggregated IS, spend, clicks, lost IS."""
     print("Pulling nonTMP monthly IS (13 months, ad_group level)...")
@@ -330,7 +366,7 @@ def pull_nontmp_weekly(service, customer_id):
 
 
 # ── HTML builder ──────────────────────────────────────────────────────────────
-def build_html(tmp_monthly, nontmp_weekly, geo_out=None, top_geos=None, tmp_by_kw=None, nontmp_monthly=None):
+def build_html(tmp_monthly, nontmp_weekly, geo_out=None, top_geos=None, tmp_by_kw=None, nontmp_monthly=None, bd16=None):
     print("Building HTML...")
     tmp_latest = tmp_monthly[-1] if tmp_monthly else {}
     tmp_prev = tmp_monthly[-2] if len(tmp_monthly) >= 2 else tmp_latest
@@ -459,6 +495,14 @@ def build_html(tmp_monthly, nontmp_weekly, geo_out=None, top_geos=None, tmp_by_k
 </div>
 
 <div class="section">
+  <h2>BD1-6 and Biz Signups</h2>
+  <div class="desc">Monthly BD1-6, Biz Signups, Signups, and CPBD1-6. Source: Databricks (Socrates). Last refreshed Jul 2026. PATs disabled by IT policy - update via seed data in refresh_statlas.py.</div>
+  <div class="chart-wrap"><canvas id="bd16Chart"></canvas></div>
+  <div class="chart-wrap" style="margin-top:24px"><canvas id="signupsChart"></canvas></div>
+  <div class="chart-wrap" style="margin-top:24px"><canvas id="cpbdChart"></canvas></div>
+</div>
+
+<div class="section">
   <h2>nonTMP (Brand-General) Monthly IS</h2>
   <div class="desc">All match types | All geos | Excl. Trello | 13-month trend. Lost IS at campaign level.</div>
   <div class="chart-wrap"><canvas id="nontmpMonthlyChart"></canvas></div>
@@ -503,6 +547,7 @@ const TMP_MONTHLY = {json.dumps(tmp_monthly)};
 const NONTMP_WEEKLY = {json.dumps(nontmp_weekly)};
 const TMP_BY_KW = {json.dumps(tmp_by_kw or [])};
 const NONTMP_MONTHLY = {json.dumps(nontmp_monthly or [])};
+const BD16 = {json.dumps(bd16 or [])};
 
 // ── Keyword + Language filter setup ──
 const allKeywords = [...new Set(TMP_BY_KW.map(d => d.keyword))].sort();
@@ -619,6 +664,47 @@ function renderTmpChart() {{
 buildKwFilter();
 renderTmpChart();
 
+if (BD16.length) {{
+  new Chart(document.getElementById('bd16Chart'), {{
+    type: 'bar',
+    data: {{
+      labels: BD16.map(d => d.month),
+      datasets: [{{ label: 'BD1-6', data: BD16.map(d => d.bd1_6),
+        backgroundColor: '#4688EC' }}]
+    }},
+    options: {{ responsive: true, maintainAspectRatio: false,
+      plugins: {{ legend: {{ display: false }}, tooltip: {{ callbacks: {{ label: ctx => ctx.parsed.y.toLocaleString() }} }} }},
+      scales: {{ x: {{ grid: {{ display: false }} }}, y: {{ ticks: {{ callback: v => v.toLocaleString() }}, grid: {{ color: '#f0f0f0' }} }} }} }}
+  }});
+
+  new Chart(document.getElementById('signupsChart'), {{
+    type: 'bar',
+    data: {{
+      labels: BD16.map(d => d.month),
+      datasets: [
+        {{ label: 'Total Signups', data: BD16.map(d => d.signups), backgroundColor: 'rgba(42,187,127,0.4)' }},
+        {{ label: 'Biz Signups', data: BD16.map(d => d.biz_signups), backgroundColor: '#2ABB7F' }},
+      ]
+    }},
+    options: {{ responsive: true, maintainAspectRatio: false,
+      plugins: {{ tooltip: {{ callbacks: {{ label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y.toLocaleString() }} }} }},
+      scales: {{ x: {{ grid: {{ display: false }} }}, y: {{ ticks: {{ callback: v => v.toLocaleString() }}, grid: {{ color: '#f0f0f0' }} }} }} }}
+  }});
+
+  new Chart(document.getElementById('cpbdChart'), {{
+    type: 'line',
+    data: {{
+      labels: BD16.map(d => d.month),
+      datasets: [{{ label: 'CPBD1-6 ($)', data: BD16.map(d => d.cpbd1_6),
+        borderColor: '#F4A261', backgroundColor: 'rgba(244,162,97,0.08)',
+        borderWidth: 3, pointRadius: 5, pointBackgroundColor: '#F4A261', fill: true, tension: 0.3 }}]
+    }},
+    options: {{ responsive: true, maintainAspectRatio: false,
+      plugins: {{ legend: {{ display: false }}, tooltip: {{ callbacks: {{ label: ctx => '$' + ctx.parsed.y.toLocaleString() }} }} }},
+      scales: {{ x: {{ grid: {{ display: false }} }}, y: {{ ticks: {{ callback: v => '$' + v.toLocaleString() }}, grid: {{ color: '#f0f0f0' }} }} }} }}
+  }});
+}}
+
 if (NONTMP_MONTHLY.length) {{
   new Chart(document.getElementById('nontmpMonthlyChart'), {{
     type: 'line',
@@ -722,8 +808,9 @@ def main():
     nontmp_monthly = pull_nontmp_monthly(service, customer_id)
     nontmp_weekly = pull_nontmp_weekly(service, customer_id)
     geo_out, top_geos = pull_geo_monthly(service, customer_id)
+    bd16 = pull_bd16()
 
-    html = build_html(tmp_monthly, nontmp_weekly, geo_out, top_geos, tmp_by_kw=tmp_by_kw, nontmp_monthly=nontmp_monthly)
+    html = build_html(tmp_monthly, nontmp_weekly, geo_out, top_geos, tmp_by_kw=tmp_by_kw, nontmp_monthly=nontmp_monthly, bd16=bd16)
     with open(OUTPUT_FILE, "w") as f:
         f.write(html)
     print(f"HTML written: {OUTPUT_FILE}")
