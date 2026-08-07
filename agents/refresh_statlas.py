@@ -495,6 +495,30 @@ def build_html(tmp_monthly, nontmp_weekly, geo_out=None, top_geos=None, tmp_by_k
 </div>
 
 <div class="section">
+  <h2>TMP IS vs Spend</h2>
+  <div class="desc">Monthly TMP IS (%) overlaid with Spend ($). Dual-axis view to surface budget/IS relationship.</div>
+  <div class="chart-wrap"><canvas id="tmpIsSpendChart"></canvas></div>
+</div>
+
+<div class="section">
+  <h2>nonTMP IS vs Spend</h2>
+  <div class="desc">Monthly nonTMP IS (%) overlaid with Spend ($). Dual-axis view to surface budget/IS relationship.</div>
+  <div class="chart-wrap"><canvas id="nontmpIsSpendChart"></canvas></div>
+</div>
+
+<div class="section">
+  <h2>TMP IS vs BD1-6</h2>
+  <div class="desc">TMP IS (%) vs BD1-6 conversions by month. Signals whether IS gains are translating to downstream outcomes.</div>
+  <div class="chart-wrap"><canvas id="tmpIsBd16Chart"></canvas></div>
+</div>
+
+<div class="section">
+  <h2>nonTMP IS vs BD1-6</h2>
+  <div class="desc">nonTMP IS (%) vs BD1-6 conversions by month. Signals whether IS gains are translating to downstream outcomes.</div>
+  <div class="chart-wrap"><canvas id="nontmpIsBd16Chart"></canvas></div>
+</div>
+
+<div class="section">
   <h2>BD1-6 and Biz Signups</h2>
   <div class="desc">Monthly BD1-6, Biz Signups, Signups, and CPBD1-6. Source: Databricks (Socrates). Last refreshed Jul 2026. PATs disabled by IT policy - update via seed data in refresh_statlas.py.</div>
   <div class="chart-wrap"><canvas id="bd16Chart"></canvas></div>
@@ -663,6 +687,82 @@ function renderTmpChart() {{
 
 buildKwFilter();
 renderTmpChart();
+
+// ── Helper: dual-axis IS vs Spend chart ──
+function makeDualChart(canvasId, labels, isData, spendData, isColor) {{
+  new Chart(document.getElementById(canvasId), {{
+    data: {{
+      labels: labels,
+      datasets: [
+        {{ type: 'bar', label: 'Spend ($)', data: spendData,
+          backgroundColor: 'rgba(100,100,100,0.2)', yAxisID: 'ySpend' }},
+        {{ type: 'line', label: 'IS (%)', data: isData,
+          borderColor: isColor, backgroundColor: isColor.replace(')', ',0.08)').replace('rgb','rgba'),
+          borderWidth: 3, pointRadius: 5, pointBackgroundColor: isColor,
+          fill: true, tension: 0.3, yAxisID: 'yIS' }},
+      ]
+    }},
+    options: {{ responsive: true, maintainAspectRatio: false,
+      plugins: {{ tooltip: {{ mode: 'index', intersect: false }} }},
+      scales: {{
+        yIS: {{ type: 'linear', position: 'left', min: 0, max: 100,
+          ticks: {{ callback: v => v + '%' }}, grid: {{ color: '#f0f0f0' }}, title: {{ display: true, text: 'IS (%)' }} }},
+        ySpend: {{ type: 'linear', position: 'right', grid: {{ display: false }},
+          ticks: {{ callback: v => '$' + v.toLocaleString() }}, title: {{ display: true, text: 'Spend ($)' }} }},
+        x: {{ grid: {{ display: false }} }}
+      }} }}
+  }});
+}}
+
+// ── Helper: dual-axis IS vs BD1-6 chart ──
+function makeIsBd16Chart(canvasId, isData, isLabels, isColor) {{
+  // Align IS and BD16 on shared months
+  const bd16Map = {{}};
+  BD16.forEach(d => bd16Map[d.month] = d.bd1_6);
+  const labels = isLabels.filter(m => bd16Map[m] !== undefined);
+  const isAligned = isData.filter((_, i) => bd16Map[isLabels[i]] !== undefined);
+  const bd16Aligned = labels.map(m => bd16Map[m]);
+  new Chart(document.getElementById(canvasId), {{
+    data: {{
+      labels: labels,
+      datasets: [
+        {{ type: 'bar', label: 'BD1-6', data: bd16Aligned,
+          backgroundColor: 'rgba(70,136,236,0.25)', yAxisID: 'yBd' }},
+        {{ type: 'line', label: 'IS (%)', data: isAligned,
+          borderColor: isColor, backgroundColor: isColor.replace(')', ',0.08)').replace('rgb','rgba'),
+          borderWidth: 3, pointRadius: 5, pointBackgroundColor: isColor,
+          fill: true, tension: 0.3, yAxisID: 'yIS' }},
+      ]
+    }},
+    options: {{ responsive: true, maintainAspectRatio: false,
+      plugins: {{ tooltip: {{ mode: 'index', intersect: false }} }},
+      scales: {{
+        yIS: {{ type: 'linear', position: 'left', min: 0, max: 100,
+          ticks: {{ callback: v => v + '%' }}, grid: {{ color: '#f0f0f0' }}, title: {{ display: true, text: 'IS (%)' }} }},
+        yBd: {{ type: 'linear', position: 'right', grid: {{ display: false }},
+          ticks: {{ callback: v => v.toLocaleString() }}, title: {{ display: true, text: 'BD1-6' }} }},
+        x: {{ grid: {{ display: false }} }}
+      }} }}
+  }});
+}}
+
+// TMP IS vs Spend
+makeDualChart('tmpIsSpendChart',
+  TMP_MONTHLY.map(d => d.month), TMP_MONTHLY.map(d => d.is), TMP_MONTHLY.map(d => d.spend), '#4688EC');
+
+// nonTMP IS vs Spend
+if (NONTMP_MONTHLY.length) {{
+  makeDualChart('nontmpIsSpendChart',
+    NONTMP_MONTHLY.map(d => d.month), NONTMP_MONTHLY.map(d => d.is), NONTMP_MONTHLY.map(d => d.spend), '#2ABB7F');
+}}
+
+// TMP IS vs BD1-6
+if (BD16.length) {{
+  makeIsBd16Chart('tmpIsBd16Chart', TMP_MONTHLY.map(d => d.is), TMP_MONTHLY.map(d => d.month), '#4688EC');
+  if (NONTMP_MONTHLY.length) {{
+    makeIsBd16Chart('nontmpIsBd16Chart', NONTMP_MONTHLY.map(d => d.is), NONTMP_MONTHLY.map(d => d.month), '#2ABB7F');
+  }}
+}}
 
 if (BD16.length) {{
   new Chart(document.getElementById('bd16Chart'), {{
