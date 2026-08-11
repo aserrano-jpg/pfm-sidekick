@@ -545,6 +545,19 @@ def build_html(tmp_monthly, nontmp_weekly, geo_out=None, top_geos=None, tmp_by_k
 </div>
 
 <div class="section">
+  <h2>TMP IS by Geo</h2>
+  <div class="desc">Impressions-weighted IS by geography (top 6 geos by volume). 13-month trend. Brand-Trademark campaigns only.</div>
+  <div class="tabs" id="geo-tabs"></div>
+  <div class="chart-wrap"><canvas id="geoIsChart"></canvas></div>
+  <div style="margin-top:24px">
+    <table id="geo-table">
+      <thead><tr><th>Month</th><th>Geo</th><th>IS%</th><th>Spend</th><th>Clicks</th></tr></thead>
+      <tbody id="geo-table-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="section">
   <h2>Raw Data</h2>
   <div class="tabs">
     <div class="tab active" onclick="showTab('tmp')">TMP Monthly</div>
@@ -572,6 +585,8 @@ const NONTMP_WEEKLY = {json.dumps(nontmp_weekly)};
 const TMP_BY_KW = {json.dumps(tmp_by_kw or [])};
 const NONTMP_MONTHLY = {json.dumps(nontmp_monthly or [])};
 const BD16 = {json.dumps(bd16 or [])};
+const GEO_DATA = {json.dumps(geo_out or [])};
+const TOP_GEOS = {json.dumps(top_geos or [])};
 
 // ── Keyword + Language filter setup ──
 const allKeywords = [...new Set(TMP_BY_KW.map(d => d.keyword))].sort();
@@ -866,6 +881,80 @@ new Chart(document.getElementById('lostIsChart'), {{
     scales: {{ x: {{ stacked: true, grid: {{ display: false }} }},
                y: {{ stacked: true, max: 100, ticks: {{ callback: v => v + '%' }}, grid: {{ color: '#f0f0f0' }} }} }} }}
 }});
+
+// ── Geo IS chart ──
+const GEO_COLORS_MAP = {{
+  'US': '#4688EC', 'UK': '#2ABB7F', 'AUNZ': '#F4A261', 'IN': '#E76F51',
+  'CA': '#9B59B6', 'DE': '#1ABC9C', 'ROW': '#E91E8C', 'JP': '#FF9800',
+  'BR': '#8BC34A', 'FR': '#00BCD4', 'ES': '#9C27B0', 'OTHER': '#95A5A6'
+}};
+let geoChart = null;
+let selectedGeo = 'ALL';
+
+function buildGeoTabs() {{
+  const wrap = document.getElementById('geo-tabs');
+  if (!TOP_GEOS.length) {{ wrap.style.display = 'none'; return; }}
+  wrap.innerHTML = TOP_GEOS.map(g =>
+    `<div class="tab${{g === selectedGeo ? ' active' : ''}}" onclick="selectGeo('${{g}}')">${{g}}</div>`
+  ).join('') +
+  '<div class="tab" onclick="selectGeo(\'ALL\')">All Geos</div>';
+}}
+
+function selectGeo(geo) {{
+  selectedGeo = geo;
+  document.querySelectorAll('#geo-tabs .tab').forEach((t, i) => {{
+    const label = i < TOP_GEOS.length ? TOP_GEOS[i] : 'ALL';
+    t.classList.toggle('active', label === geo);
+  }});
+  renderGeoChart();
+}}
+
+function renderGeoChart() {{
+  const geos = selectedGeo === 'ALL' ? TOP_GEOS : [selectedGeo];
+  const months = [...new Set(GEO_DATA.map(d => d.month))].sort();
+  const datasets = geos.map(g => {{
+    const color = GEO_COLORS_MAP[g] || '#888';
+    return {{
+      label: g,
+      data: months.map(m => {{
+        const row = GEO_DATA.find(d => d.month === m && d.geo === g);
+        return row ? row.is : null;
+      }}),
+      borderColor: color,
+      backgroundColor: color + '18',
+      borderWidth: 2, pointRadius: 4, pointBackgroundColor: color,
+      fill: geos.length === 1, tension: 0.3, spanGaps: true
+    }};
+  }});
+
+  if (geoChart) geoChart.destroy();
+  geoChart = new Chart(document.getElementById('geoIsChart'), {{
+    type: 'line',
+    data: {{ labels: months, datasets }},
+    options: {{
+      responsive: true, maintainAspectRatio: false,
+      plugins: {{
+        tooltip: {{ mode: 'index', intersect: false,
+          callbacks: {{ label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y + '%' }} }}
+      }},
+      scales: {{
+        y: {{ min: 50, max: 100, ticks: {{ callback: v => v + '%' }}, grid: {{ color: '#f0f0f0' }} }},
+        x: {{ grid: {{ display: false }} }}
+      }}
+    }}
+  }});
+
+  // update table
+  const rows = GEO_DATA.filter(d => geos.includes(d.geo)).sort((a, b) =>
+    b.month.localeCompare(a.month) || a.geo.localeCompare(b.geo));
+  document.getElementById('geo-table-body').innerHTML = rows.map(r =>
+    `<tr><td>${{r.month}}</td><td><strong>${{r.geo}}</strong></td>` +
+    `<td>${{r.is}}%</td><td>$${{r.spend.toLocaleString()}}</td><td>${{r.clicks.toLocaleString()}}</td></tr>`
+  ).join('');
+}}
+
+buildGeoTabs();
+if (GEO_DATA.length) renderGeoChart();
 
 function showTab(name) {{
   document.getElementById('tab-tmp').style.display = name === 'tmp' ? '' : 'none';
