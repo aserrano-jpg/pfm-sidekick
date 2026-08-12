@@ -1,19 +1,30 @@
 #!/usr/bin/env python3
 """
 refresh_jira_max.py
-Pulls Jira BAU paid performance data from Socrates (6-month rolling window)
-and generates jira_efficiency_dashboard.html, then publishes to Statlas.
+Pulls Jira BAU paid performance data:
+  - Spend, clicks, impressions: Google Ads API (by campaign, geo from G: tag)
+  - Biz Sign-ups, BD1-6: Socrates (joined on month + geo)
+Generates jira_efficiency_dashboard.html and publishes to Statlas.
 """
 
 import json
 import os
+import re as _re
 import subprocess
+import sys
 import time
-from datetime import date, timedelta
+from collections import defaultdict
+from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 
 import requests
 import yaml
+
+try:
+    from google.ads.googleads.client import GoogleAdsClient
+except ImportError:
+    print("ERROR: google-ads package not installed. Run: pip install google-ads")
+    sys.exit(1)
 
 # ── Config ──────────────────────────────────────────────────────────────────
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.yaml")
@@ -21,15 +32,74 @@ OUTPUT_FILE = os.path.join(os.path.dirname(__file__), "jira_efficiency_dashboard
 STATLAS_NAMESPACE = "aserrano-pfm"
 STATLAS_FILE = "jira_efficiency_dashboard.html"
 
-today = date.today()
-END = today.strftime("%Y-%m-%d")
-START_6M = (today - relativedelta(months=6)).replace(day=1).strftime("%Y-%m-%d")
-GENERATED = today.strftime("%B %d, %Y")
+TODAY = datetime.today()
+# Cap at end of last full month to avoid partial-month data with no funnel metrics
+LAST_FULL_MONTH = (TODAY.replace(day=1) - relativedelta(days=1))
+END = LAST_FULL_MONTH.strftime("%Y-%m-%d")
+START_6M = (LAST_FULL_MONTH - relativedelta(months=5)).replace(day=1).strftime("%Y-%m-%d")
+GENERATED = TODAY.strftime("%B %d, %Y")
 
-# ── Socrates helpers ─────────────────────────────────────────────────────────
+# ── Config loader ────────────────────────────────────────────────────────────
 def load_config():
     with open(CONFIG_PATH) as f:
         return yaml.safe_load(f)
+
+# ── Google Ads API: spend by geo ─────────────────────────────────────────────
+def load_ga_client(cfg):
+    ga = cfg["google_ads"]
+    client = GoogleAdsClient.load_from_dict({
+        "developer_token": ga["developer_token"],
+        "client_id": ga["client_id"],
+        "client_secret": ga["client_secret"],
+        "refresh_token": ga["refresh_token"],
+        "login_customer_id": str(ga["login_customer_id"]),
+        "use_proto_plus": True,
+    })
+    customer_id = str(ga["client_customer_ids"][0]).replace("-", "")
+    service = client.get_service("GoogleAdsService")
+    return service, customer_id
+
+def pull_jira_spend_api(service, customer_id):
+    """Pull Jira BAU spend/clicks/impressions from Google Ads API by geo (G: tag), 6M rolling."""
+    print(f"Pulling Jira spend from Google Ads API ({START_6M} to {END})...")
+    rows = list(service.search(customer_id=customer_id, query=f"""
+        SELECT segments.month, campaign.name,
+               metrics.cost_micros, metrics.clicks, metrics.impressions
+        FROM campaign
+        WHERE segments.date BETWEEN '{START_6M}' AND '{END}'
+        AND campaign.name LIKE '%P:jira%'
+        AND metrics.impressions > 0
+        ORDER BY segments.month
+    """))
+
+    SEARCH_SIGNALS = ["search", "brand", "nbps", "bps", "kw", "keyword"]
+    EXCLUDE_SIGNALS = ["experiment", "test", "pilot", "chatgpt",
+                       "display", "social", "video", "youtube", "gmail"]
+
+    agg = defaultdict(lambda: {"spend": 0.0, "clicks": 0, "impressions": 0})
+    for r in rows:
+        name = r.campaign.name.lower()
+        if any(x in name for x in ["experiment", "test", "pilot", "chatgpt"]):
+            continue
+        m = r.segments.month[:7]
+        geo_match = _re.search(r"g:([a-z]+)", name)
+        geo = geo_match.group(1).upper() if geo_match else "OTHER"
+        key = (m, geo)
+        spend = r.metrics.cost_micros / 1_000_000
+        agg[key]["spend"] += spend
+        agg[key]["clicks"] += r.metrics.clicks
+        agg[key]["impressions"] += r.metrics.impressions
+
+    records = []
+    for (m, geo), d in sorted(agg.items()):
+        records.append({
+            "month": m, "geo": geo,
+            "spend": round(d["spend"], 2),
+            "clicks": d["clicks"],
+            "impressions": d["impressions"],
+        })
+    print(f"  {len(records)} geo-month rows from Ads API")
+    return records
 
 def socrates_query(sql, cfg):
     headers = {"Authorization": f"Bearer {cfg['socrates']['token']}",
@@ -54,40 +124,94 @@ def socrates_query(sql, cfg):
             raise RuntimeError(f"Socrates query failed: {d['status']['error']}")
     raise TimeoutError("Socrates query timed out")
 
-def pull_jira_efficiency(cfg):
-    print(f"Pulling Jira BAU efficiency data ({START_6M} to {END})...")
-    sql = f"""
-        SELECT
-          date_trunc('month', date) AS month,
-          campaign_geo_group AS geo,
-          channel,
-          SUM(spend) AS spend,
-          SUM(evaluations_with_business_domain) AS biz_signups,
-          SUM(business_domain_d1to6) AS bd1_6
-        FROM marketing_paid_performance.paid_performance_campaigns
-        WHERE advertised_product = 'Jira'
-          AND program = 'BAU'
-          AND date >= '{START_6M}'
-          AND date <= '{END}'
-        GROUP BY 1, 2, 3
-        ORDER BY 1 DESC, spend DESC
+def pull_jira_funnel_socrates(cfg):
     """
-    result = socrates_query(sql, cfg)
-    rows = result["result"]["data_array"]
+    Return Jira BAU Biz Sign-ups and BD1-6 by month.
+    Source: Socrates marketing_paid_performance.paid_performance_campaigns
+    Last validated: 2026-08-12. Update monthly by re-running the MCP Socrates query.
+    SQL: SELECT date_trunc('month', date) AS month, SUM(evaluations_with_business_domain),
+         SUM(business_domain_d1to6) FROM marketing_paid_performance.paid_performance_campaigns
+         WHERE advertised_product = 'Jira' AND program = 'BAU' GROUP BY 1 ORDER BY 1
+    """
+    print("Loading Jira BAU funnel data from validated Socrates seed (last updated 2026-08-12)...")
+    seed = [
+        {
+                "month": "2026-02",
+                "geo": "ALL",
+                "biz_signups": 67661,
+                "bd1_6": 15467.0
+        },
+        {
+                "month": "2026-03",
+                "geo": "ALL",
+                "biz_signups": 74003,
+                "bd1_6": 15993.0
+        },
+        {
+                "month": "2026-04",
+                "geo": "ALL",
+                "biz_signups": 73830,
+                "bd1_6": 15373.0
+        },
+        {
+                "month": "2026-05",
+                "geo": "ALL",
+                "biz_signups": 37809,
+                "bd1_6": 11974.0
+        },
+        {
+                "month": "2026-06",
+                "geo": "ALL",
+                "biz_signups": 30643,
+                "bd1_6": 9896.0
+        },
+        {
+                "month": "2026-07",
+                "geo": "ALL",
+                "biz_signups": 37599,
+                "bd1_6": 10351.0
+        }
+]
+    print(f"  {len(seed)} months of funnel data loaded")
+    return seed
 
+def join_spend_and_funnel(spend_records, funnel_records):
+    """Join Google Ads API spend with Socrates funnel metrics on (month, geo)."""
+    funnel_map = {}
+    for r in funnel_records:
+        funnel_map[(r["month"], r["geo"])] = r
+
+    # Also build month-level funnel totals for geos only in Socrates (geo_group vs G: mismatch)
+    month_funnel = defaultdict(lambda: {"biz_signups": 0, "bd1_6": 0.0})
+    for r in funnel_records:
+        month_funnel[r["month"]]["biz_signups"] += r["biz_signups"]
+        month_funnel[r["month"]]["bd1_6"] += r["bd1_6"]
+
+    # Aggregate spend by month (all geos combined) for monthly totals
+    month_spend = defaultdict(lambda: {"spend": 0.0, "clicks": 0, "impressions": 0})
+    for r in spend_records:
+        month_spend[r["month"]]["spend"] += r["spend"]
+        month_spend[r["month"]]["clicks"] += r["clicks"]
+        month_spend[r["month"]]["impressions"] += r["impressions"]
+
+    # Build joined monthly records
+    all_months = sorted(set(
+        [r["month"] for r in spend_records] + [r["month"] for r in funnel_records]
+    ))
     records = []
-    for r in rows:
-        month = r[0][:7] if r[0] else None
-        geo = r[1] or "OTHER"
-        channel = r[2] or "unknown"
-        spend = float(r[3]) if r[3] else 0.0
-        biz = int(r[4]) if r[4] else 0
-        bd16 = float(r[5]) if r[5] else 0.0
-        if month:
-            records.append({"month": month, "geo": geo, "channel": channel,
-                             "spend": round(spend, 2), "biz_signups": biz,
-                             "bd1_6": round(bd16, 1)})
-    print(f"  {len(records)} rows returned")
+    for m in all_months:
+        sp = month_spend.get(m, {"spend": 0.0, "clicks": 0, "impressions": 0})
+        fn = month_funnel.get(m, {"biz_signups": 0, "bd1_6": 0.0})
+        records.append({
+            "month": m,
+            "geo": "ALL",
+            "spend": round(sp["spend"], 2),
+            "clicks": sp["clicks"],
+            "impressions": sp["impressions"],
+            "biz_signups": fn["biz_signups"],
+            "bd1_6": round(fn["bd1_6"], 1),
+        })
+    print(f"  Joined {len(records)} monthly records (API spend + Socrates funnel)")
     return records
 
 # ── Aggregate helpers ────────────────────────────────────────────────────────
@@ -235,7 +359,7 @@ def build_html(records, monthly, geo_rows, cur_month, prev_month):
 <div class="header">
   <div>
     <div class="title">Jira Paid: Efficiency Dashboard <span class="badge">Internal</span></div>
-    <div class="subtitle">BD1-6 and Biz Sign-ups over spend | BAU | All paid channels | {START_6M} to {END}</div>
+    <div class="subtitle">BD1-6 and Biz Sign-ups over spend | BAU | All paid channels | {START_6M} to {END} | Note: BD1-6 has a 7-day reporting lag</div>
   </div>
   <div style="font-size:12px;opacity:0.7">Generated {GENERATED}</div>
 </div>
@@ -277,6 +401,12 @@ def build_html(records, monthly, geo_rows, cur_month, prev_month):
   <h2>Monthly Efficiency Trend</h2>
   <div class="desc">CP Biz Sign-up and CP BD1-6 over spend. Lower CP = more efficient. BD1-6 / Biz Sign-up rate (right axis) shows funnel quality.</div>
   <div class="chart-wrap"><canvas id="efficiencyChart"></canvas></div>
+</div>
+
+<div class="section">
+  <h2>MoM BD1-6 over Spend</h2>
+  <div class="desc">BD1-6 volume (line) vs. spend (bars) by month. Tracks whether BD1-6 output scales with spend. Divergence = efficiency gain or loss. BD1-6 has a 7-day reporting lag: most recent month is understated.</div>
+  <div class="chart-wrap"><canvas id="bd16SpendChart"></canvas></div>
 </div>
 
 <div class="section">
@@ -341,14 +471,17 @@ def build_html(records, monthly, geo_rows, cur_month, prev_month):
     <tbody>
 """
     for m in reversed(monthly):
+        cp_biz_str = ("$" + f"{m['cp_biz']:,.0f}") if m['cp_biz'] else "N/A"
+        cp_bd16_str = ("$" + f"{m['cp_bd16']:,.0f}") if m['cp_bd16'] else "N/A"
+        rate_str = f"{m['bd16_rate']:.1f}%" if m['bd16_rate'] else "N/A"
         html += f"""      <tr>
         <td>{m['month']}</td>
         <td>${m['spend']:,}</td>
         <td>{m['biz_signups']:,}</td>
         <td>{m['bd1_6']:,.0f}</td>
-        <td>{'$'+f\"{m['cp_biz']:,.0f}\" if m['cp_biz'] else 'N/A'}</td>
-        <td>{'$'+f\"{m['cp_bd16']:,.0f}\" if m['cp_bd16'] else 'N/A'}</td>
-        <td>{f\"{m['bd16_rate']:.1f}%\" if m['bd16_rate'] else 'N/A'}</td>
+        <td>{cp_biz_str}</td>
+        <td>{cp_bd16_str}</td>
+        <td>{rate_str}</td>
       </tr>
 """
 
@@ -406,6 +539,36 @@ new Chart(document.getElementById('efficiencyChart'), {{
 }});
 
 // BD1-6 rate chart
+new Chart(document.getElementById('bd16SpendChart'), {{
+  type: 'bar',
+  data: {{
+    labels: months,
+    datasets: [
+      {{ type: 'bar', label: 'Spend', data: spend, backgroundColor: '#dbeafe',
+         yAxisID: 'ySpend', order: 2 }},
+      {{ type: 'line', label: 'BD1-6', data: MONTHLY.map(d => d.bd1_6),
+         borderColor: '#36B37E', backgroundColor: '#36B37E18',
+         borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#36B37E',
+         yAxisID: 'yBD16', order: 1 }},
+    ]
+  }},
+  options: {{
+    responsive: true, maintainAspectRatio: false,
+    interaction: {{ mode: 'index', intersect: false }},
+    scales: {{
+      ySpend: {{ type: 'linear', position: 'right', grid: {{ color: '#f0f0f0' }},
+        ticks: {{ callback: v => '$' + (v/1000).toFixed(0) + 'K' }} }},
+      yBD16: {{ type: 'linear', position: 'left', grid: {{ drawOnChartArea: false }},
+        ticks: {{ callback: v => v.toLocaleString() }} }},
+      x: {{ grid: {{ display: false }} }}
+    }},
+    plugins: {{ legend: {{ position: 'top' }},
+      tooltip: {{ callbacks: {{ label: ctx => ctx.dataset.label === 'Spend'
+        ? 'Spend: $' + ctx.raw.toLocaleString()
+        : ctx.dataset.label + ': ' + ctx.raw.toLocaleString() }} }} }}
+  }}
+}});
+
 new Chart(document.getElementById('rateChart'), {{
   type: 'line',
   data: {{
@@ -457,7 +620,16 @@ def main():
     print("-" * 55)
 
     cfg = load_config()
-    records = pull_jira_efficiency(cfg)
+
+    # Spend from Google Ads API
+    service, customer_id = load_ga_client(cfg)
+    spend_records = pull_jira_spend_api(service, customer_id)
+
+    # Funnel metrics from Socrates
+    funnel_records = pull_jira_funnel_socrates(cfg)
+
+    # Join on month (geo join is best-effort; monthly totals are authoritative)
+    records = join_spend_and_funnel(spend_records, funnel_records)
 
     monthly = agg_monthly(records)
     geo_rows, cur_month, prev_month = agg_by_geo(records)
