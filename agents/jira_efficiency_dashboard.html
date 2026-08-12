@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Jira Paid Efficiency Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+           background: #f5f6f8; color: #1a1a2e; font-size: 14px; }
+    .header { background: #0052CC; color: #fff; padding: 20px 32px;
+              display: flex; align-items: center; justify-content: space-between; }
+    .title { font-size: 20px; font-weight: 700; }
+    .badge { background: rgba(255,255,255,0.2); border-radius: 4px;
+             padding: 2px 8px; font-size: 11px; margin-left: 10px; }
+    .subtitle { font-size: 12px; opacity: 0.8; margin-top: 4px; }
+    .cards { display: flex; gap: 16px; padding: 24px 32px 0; flex-wrap: wrap; }
+    .card { background: #fff; border-radius: 10px; padding: 18px 22px;
+            flex: 1; min-width: 160px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+    .card.green { border-top: 3px solid #2ABB7F; }
+    .card.blue { border-top: 3px solid #0052CC; }
+    .card.orange { border-top: 3px solid #FF8B00; }
+    .card-label { font-size: 11px; color: #6b7280; text-transform: uppercase;
+                  letter-spacing: 0.5px; margin-bottom: 6px; }
+    .card-value { font-size: 26px; font-weight: 700; }
+    .card-sub { font-size: 11px; color: #9ca3af; margin-top: 4px; }
+    .section { background: #fff; border-radius: 10px; margin: 20px 32px;
+               padding: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+    h2 { font-size: 16px; font-weight: 700; margin-bottom: 6px; color: #1a1a2e; }
+    .desc { font-size: 12px; color: #6b7280; margin-bottom: 16px; }
+    .chart-wrap { position: relative; height: 280px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { background: #f8fafc; text-align: left; padding: 10px 12px;
+         font-size: 11px; font-weight: 600; color: #6b7280;
+         text-transform: uppercase; letter-spacing: 0.4px;
+         border-bottom: 2px solid #e5e7eb; }
+    td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; }
+    tr:hover td { background: #f8fafc; }
+    .delta { font-size: 11px; font-weight: 600; margin-left: 6px; }
+    .delta.green { color: #2ABB7F; }
+    .delta.red { color: #E76F51; }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 10px;
+            font-size: 11px; font-weight: 600; }
+    .pill.good { background: #d1fae5; color: #065f46; }
+    .pill.ok { background: #fef3c7; color: #92400e; }
+    .pill.poor { background: #fee2e2; color: #991b1b; }
+    .footer { text-align: center; padding: 20px; font-size: 11px; color: #9ca3af; }
+  </style>
+</head>
+<body>
+<div class="header">
+  <div>
+    <div class="title">Jira Paid: Efficiency Dashboard <span class="badge">Internal</span></div>
+    <div class="subtitle">BD1-6 and Biz Sign-ups over spend | BAU | All paid channels | Feb 2026 to Jul 2026</div>
+  </div>
+  <div style="font-size:12px;opacity:0.7">Generated Aug 12, 2026</div>
+</div>
+
+<div class="cards">
+  <div class="card blue">
+    <div class="card-label">6M Total Spend</div>
+    <div class="card-value">$8.78M</div>
+    <div class="card-sub">All channels | BAU</div>
+  </div>
+  <div class="card">
+    <div class="card-label">6M Biz Sign-ups</div>
+    <div class="card-value">255,747</div>
+    <div class="card-sub">CP Biz: $34</div>
+  </div>
+  <div class="card green">
+    <div class="card-label">6M BD1-6</div>
+    <div class="card-value">60,803</div>
+    <div class="card-sub">CP BD1-6: $144</div>
+  </div>
+  <div class="card orange">
+    <div class="card-label">BD1-6 / Biz Sign-up Rate</div>
+    <div class="card-value">23.8%</div>
+    <div class="card-sub">6M average</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Jul 2026 Biz Sign-ups</div>
+    <div class="card-value">43,372</div>
+    <div class="card-sub">CP Biz: $77 <span class="delta red">87.0%</span></div>
+  </div>
+  <div class="card green">
+    <div class="card-label">Jul 2026 BD1-6</div>
+    <div class="card-value">10,549</div>
+    <div class="card-sub">CP BD1-6: $317 <span class="delta red">129.5%</span></div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Monthly Efficiency Trend</h2>
+  <div class="desc">CP Biz Sign-up and CP BD1-6 over spend. Lower CP = more efficient. Jul spike reflects full month of spend data vs. partial prior months.</div>
+  <div class="chart-wrap"><canvas id="efficiencyChart"></canvas></div>
+</div>
+
+<div class="section">
+  <h2>BD1-6 / Biz Sign-up Rate by Month</h2>
+  <div class="desc">What share of Biz Sign-ups convert to BD1-6. Higher = better quality traffic. All channels combined.</div>
+  <div class="chart-wrap"><canvas id="rateChart"></canvas></div>
+</div>
+
+<div class="section">
+  <h2>Geo Efficiency: Jul 2026</h2>
+  <div class="desc">CP Biz Sign-up, CP BD1-6, and BD1-6 rate by geo. MoM delta vs Jun 2026. Lower CP = better. Higher rate = better.</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Geo</th>
+        <th>Spend</th>
+        <th>Biz Sign-ups</th>
+        <th>BD1-6</th>
+        <th>CP Biz Sign-up</th>
+        <th>CP BD1-6</th>
+        <th>BD1-6 Rate</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>BR-IN</strong></td>
+        <td>$762,667</td>
+        <td>16,103</td>
+        <td>3,423</td>
+        <td>$47 <span class="delta red">14.9%</span></td>
+        <td>$223 <span class="delta red">30.2%</span></td>
+        <td><span class="pill ok">21.3%</span></td>
+      </tr>
+      <tr>
+        <td><strong>ROW</strong></td>
+        <td>$727,731</td>
+        <td>13,408</td>
+        <td>3,088</td>
+        <td>$54 <span class="delta red">239.8%</span></td>
+        <td>$236 <span class="delta red">410.5%</span></td>
+        <td><span class="pill ok">23.0%</span></td>
+      </tr>
+      <tr>
+        <td><strong>US</strong></td>
+        <td>$1,034,351</td>
+        <td>5,226</td>
+        <td>1,631</td>
+        <td>$198 <span class="delta red">127.3%</span></td>
+        <td>$634 <span class="delta red">150.3%</span></td>
+        <td><span class="pill good">31.2%</span></td>
+      </tr>
+      <tr>
+        <td><strong>UK</strong></td>
+        <td>$172,282</td>
+        <td>1,281</td>
+        <td>424</td>
+        <td>$134 <span class="delta red">141.4%</span></td>
+        <td>$406 <span class="delta red">158.2%</span></td>
+        <td><span class="pill good">33.1%</span></td>
+      </tr>
+      <tr>
+        <td><strong>AUNZ</strong></td>
+        <td>$156,339</td>
+        <td>1,436</td>
+        <td>425</td>
+        <td>$109 <span class="delta red">201.3%</span></td>
+        <td>$368 <span class="delta red">246.6%</span></td>
+        <td><span class="pill good">29.6%</span></td>
+      </tr>
+      <tr>
+        <td><strong>DE</strong></td>
+        <td>$98,301</td>
+        <td>901</td>
+        <td>347</td>
+        <td>$109 <span class="delta red">184.3%</span></td>
+        <td>$283 <span class="delta red">131.6%</span></td>
+        <td><span class="pill good">38.5%</span></td>
+      </tr>
+      <tr>
+        <td><strong>OT3</strong></td>
+        <td>$207,775</td>
+        <td>2,106</td>
+        <td>361</td>
+        <td>$99 <span class="delta red">27.8%</span></td>
+        <td>$576 <span class="delta red">42.4%</span></td>
+        <td><span class="pill poor">17.1%</span></td>
+      </tr>
+      <tr>
+        <td><strong>JP</strong></td>
+        <td>$63,384</td>
+        <td>562</td>
+        <td>145</td>
+        <td>$113 <span class="delta red">91.5%</span></td>
+        <td>$437 <span class="delta red">91.2%</span></td>
+        <td><span class="pill ok">25.8%</span></td>
+      </tr>
+      <tr>
+        <td><strong>CA</strong></td>
+        <td>$62,669</td>
+        <td>776</td>
+        <td>251</td>
+        <td>$81 <span class="delta red">93.9%</span></td>
+        <td>$250 <span class="delta red">87.2%</span></td>
+        <td><span class="pill good">32.3%</span></td>
+      </tr>
+      <tr>
+        <td><strong>FR</strong></td>
+        <td>$52,163</td>
+        <td>543</td>
+        <td>166</td>
+        <td>$96 <span class="delta red">88.1%</span></td>
+        <td>$314 <span class="delta red">79.9%</span></td>
+        <td><span class="pill good">30.6%</span></td>
+      </tr>
+      <tr>
+        <td><strong>ES</strong></td>
+        <td>$50,734</td>
+        <td>1,010</td>
+        <td>408</td>
+        <td>$50 <span class="delta red">204.9%</span></td>
+        <td>$124 <span class="delta red">171.0%</span></td>
+        <td><span class="pill good">40.4%</span></td>
+      </tr>
+      <tr>
+        <td><strong>IT</strong></td>
+        <td>$19,615</td>
+        <td>342</td>
+        <td>107</td>
+        <td>$57 <span class="delta red">12.3%</span></td>
+        <td>$183 <span class="delta red">10.2%</span></td>
+        <td><span class="pill good">31.3%</span></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="section">
+  <h2>Raw Monthly Data</h2>
+  <div class="desc">All channels combined. Source: Socrates / marketing_paid_performance.paid_performance_campaigns. Jira BAU only. Feb-Jul 2026.</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Month</th>
+        <th>Spend</th>
+        <th>Biz Sign-ups</th>
+        <th>BD1-6</th>
+        <th>CP Biz Sign-up</th>
+        <th>CP BD1-6</th>
+        <th>BD1-6 Rate</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>2026-07</td><td>$3,344,236</td><td>43,372</td><td>10,549</td><td>$77</td><td>$317</td><td>24.3%</td></tr>
+      <tr><td>2026-06</td><td>$1,190,753</td><td>28,871</td><td>8,622</td><td>$41</td><td>$138</td><td>29.9%</td></tr>
+      <tr><td>2026-05</td><td>$816,718</td><td>29,048</td><td>8,733</td><td>$28</td><td>$94</td><td>30.1%</td></tr>
+      <tr><td>2026-04</td><td>$1,383,204</td><td>52,808</td><td>10,895</td><td>$26</td><td>$127</td><td>20.6%</td></tr>
+      <tr><td>2026-03</td><td>$1,124,352</td><td>53,125</td><td>11,117</td><td>$21</td><td>$101</td><td>20.9%</td></tr>
+      <tr><td>2026-02</td><td>$918,671</td><td>48,523</td><td>10,887</td><td>$19</td><td>$84</td><td>22.4%</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="footer">Jira Paid Efficiency Dashboard | Source: Socrates | Generated Aug 12, 2026 | Internal use only</div>
+
+<script>
+const MONTHLY = [
+  {"month":"2026-02","spend":918671,"biz_signups":48523,"bd1_6":10887.0,"cp_biz":18.93,"cp_bd16":84.38,"bd16_rate":22.44},
+  {"month":"2026-03","spend":1124352,"biz_signups":53125,"bd1_6":11117.0,"cp_biz":21.16,"cp_bd16":101.14,"bd16_rate":20.93},
+  {"month":"2026-04","spend":1383204,"biz_signups":52808,"bd1_6":10895.0,"cp_biz":26.19,"cp_bd16":126.96,"bd16_rate":20.63},
+  {"month":"2026-05","spend":816718,"biz_signups":29048,"bd1_6":8733.0,"cp_biz":28.12,"cp_bd16":93.52,"bd16_rate":30.06},
+  {"month":"2026-06","spend":1190753,"biz_signups":28871,"bd1_6":8622.0,"cp_biz":41.24,"cp_bd16":138.11,"bd16_rate":29.86},
+  {"month":"2026-07","spend":3344236,"biz_signups":43372,"bd1_6":10549.0,"cp_biz":77.11,"cp_bd16":317.02,"bd16_rate":24.32}
+];
+
+const months = MONTHLY.map(d => d.month);
+const cpBiz  = MONTHLY.map(d => d.cp_biz);
+const cpBd16 = MONTHLY.map(d => d.cp_bd16);
+const spend  = MONTHLY.map(d => d.spend);
+const rate   = MONTHLY.map(d => d.bd16_rate);
+
+new Chart(document.getElementById('efficiencyChart'), {
+  type: 'bar',
+  data: {
+    labels: months,
+    datasets: [
+      { type: 'bar', label: 'Spend', data: spend, backgroundColor: '#dbeafe',
+        yAxisID: 'ySpend', order: 2 },
+      { type: 'line', label: 'CP Biz Sign-up', data: cpBiz,
+        borderColor: '#0052CC', backgroundColor: '#0052CC18',
+        borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#0052CC',
+        fill: false, tension: 0.3, yAxisID: 'yCp', order: 1 },
+      { type: 'line', label: 'CP BD1-6', data: cpBd16,
+        borderColor: '#2ABB7F', backgroundColor: '#2ABB7F18',
+        borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#2ABB7F',
+        fill: false, tension: 0.3, yAxisID: 'yCp', order: 1 },
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: {
+      tooltip: { mode: 'index', intersect: false,
+        callbacks: { label: ctx => ctx.dataset.label + ': $' + (ctx.parsed.y || 0).toLocaleString() } }
+    },
+    scales: {
+      yCp: { type: 'linear', position: 'left', grid: { color: '#f0f0f0' },
+             ticks: { callback: v => '$' + v.toLocaleString() } },
+      ySpend: { type: 'linear', position: 'right', grid: { display: false },
+                ticks: { callback: v => '$' + (v/1000000).toFixed(1) + 'M' } },
+      x: { grid: { display: false } }
+    }
+  }
+});
+
+new Chart(document.getElementById('rateChart'), {
+  type: 'line',
+  data: {
+    labels: months,
+    datasets: [{
+      label: 'BD1-6 / Biz Sign-up Rate',
+      data: rate,
+      borderColor: '#FF8B00',
+      backgroundColor: '#FF8B0018',
+      borderWidth: 2, pointRadius: 5, pointBackgroundColor: '#FF8B00',
+      fill: true, tension: 0.3
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: {
+      tooltip: { callbacks: { label: ctx => 'BD1-6 Rate: ' + (ctx.parsed.y || 0).toFixed(2) + '%' } }
+    },
+    scales: {
+      y: { ticks: { callback: v => v + '%' }, grid: { color: '#f0f0f0' } },
+      x: { grid: { display: false } }
+    }
+  }
+});
+</script>
+</body>
+</html>
