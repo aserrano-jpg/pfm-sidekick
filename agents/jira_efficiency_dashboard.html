@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Jira Paid Efficiency Dashboard</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -55,19 +56,19 @@
   </style>
 </head>
 <body>
-<div style="background:#f8fafc;border-bottom:1px solid #e5e7eb;padding:10px 32px;display:flex;align-items:center;gap:8px;">
-  <span style="font-size:12px;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">Channel</span>
-  <button id="btn-all" onclick="setChannel('ALL')" style="padding:4px 14px;border-radius:20px;border:1.5px solid #0052CC;background:#0052CC;color:#fff;font-size:12px;font-weight:600;cursor:pointer">All</button>
-  <button id="btn-bps" onclick="setChannel('BPS')" style="padding:4px 14px;border-radius:20px;border:1.5px solid #ddd;background:#fff;color:#374151;font-size:12px;font-weight:600;cursor:pointer">BPS</button>
-  <button id="btn-nbps" onclick="setChannel('NBPS')" style="padding:4px 14px;border-radius:20px;border:1.5px solid #ddd;background:#fff;color:#374151;font-size:12px;font-weight:600;cursor:pointer">NBPS</button>
-</div>
-
 <div class="header">
   <div>
     <div class="title">Jira Paid: Efficiency Dashboard <span class="badge">Internal</span></div>
     <div class="subtitle">BD1-6 and Biz Sign-ups over spend | BAU | All paid channels | 2026-02-01 to 2026-07-31 | Note: BD1-6 has a 7-day reporting lag</div>
   </div>
   <div style="font-size:12px;opacity:0.7">Generated August 12, 2026</div>
+</div>
+
+<div style="background:#f8fafc;border-bottom:1px solid #e5e7eb;padding:10px 32px;display:flex;align-items:center;gap:8px;">
+  <span style="font-size:12px;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">Channel</span>
+  <button id="btn-all" onclick="setChannel('ALL')" style="padding:4px 14px;border-radius:20px;border:1.5px solid #0052CC;background:#0052CC;color:#fff;font-size:12px;font-weight:600;cursor:pointer">All</button>
+  <button id="btn-bps" onclick="setChannel('BPS')" style="padding:4px 14px;border-radius:20px;border:1.5px solid #ddd;background:#fff;color:#374151;font-size:12px;font-weight:600;cursor:pointer">BPS</button>
+  <button id="btn-nbps" onclick="setChannel('NBPS')" style="padding:4px 14px;border-radius:20px;border:1.5px solid #ddd;background:#fff;color:#374151;font-size:12px;font-weight:600;cursor:pointer">NBPS</button>
 </div>
 
 <div class="cards">
@@ -107,6 +108,12 @@
   <h2>Monthly Efficiency Trend</h2>
   <div class="desc">CP Biz Sign-up and CP BD1-6 over spend. Lower CP = more efficient. BD1-6 / Biz Sign-up rate (right axis) shows funnel quality.</div>
   <div class="chart-wrap"><canvas id="efficiencyChart"></canvas></div>
+</div>
+
+<div class="section">
+  <h2>IS x Spend Efficiency</h2>
+  <div class="desc">Each point = one month. X-axis = spend, Y-axis = Impression Share %. Shows what IS level a given spend level buys. Curve flattening = diminishing returns.</div>
+  <div class="chart-wrap"><canvas id="isSpendChart"></canvas></div>
 </div>
 
 <div class="section">
@@ -152,12 +159,12 @@
 
 <div class="section">
   <h2>Raw Monthly Data</h2>
-  <div class="desc">Paid search only (BPS + NBPS). Source: Google Ads API (spend) + Socrates (Biz Sign-ups, BD1-6). Jira BAU. BD1-6 has a 7-day reporting lag.</div>
+  <div class="desc">All channels combined. Source: Socrates / marketing_paid_performance.paid_performance_campaigns. Jira BAU only.</div>
   <table>
     <thead>
       <tr><th>Month</th><th>Spend</th><th>Biz Sign-ups</th><th>BD1-6</th><th>CP Biz Sign-up</th><th>CP BD1-6</th><th>BD1-6 Rate</th></tr>
     </thead>
-    <tbody id="raw-table-body">
+    <tbody>
       <tr>
         <td>2026-07</td>
         <td>$2,061,590</td>
@@ -219,44 +226,67 @@
 <div class="footer">Jira Paid Efficiency Dashboard | Source: Socrates | Generated August 12, 2026 | Internal use only</div>
 
 <script>
-const MONTHLY = [{"month": "2026-02", "spend": 1404025, "biz_signups": 67661, "bd1_6": 15467.0, "cp_biz": 20.75, "cp_bd16": 90.78, "bd16_rate": 22.86}, {"month": "2026-03", "spend": 1670617, "biz_signups": 74003, "bd1_6": 15993.0, "cp_biz": 22.57, "cp_bd16": 104.46, "bd16_rate": 21.61}, {"month": "2026-04", "spend": 2367196, "biz_signups": 73830, "bd1_6": 15373.0, "cp_biz": 32.06, "cp_bd16": 153.98, "bd16_rate": 20.82}, {"month": "2026-05", "spend": 797192, "biz_signups": 37809, "bd1_6": 11974.0, "cp_biz": 21.08, "cp_bd16": 66.58, "bd16_rate": 31.67}, {"month": "2026-06", "spend": 744817, "biz_signups": 30643, "bd1_6": 9896.0, "cp_biz": 24.31, "cp_bd16": 75.26, "bd16_rate": 32.29}, {"month": "2026-07", "spend": 2061590, "biz_signups": 37599, "bd1_6": 10351.0, "cp_biz": 54.83, "cp_bd16": 199.17, "bd16_rate": 27.53}];
-const BPS_DATA = [{"month": "2026-02", "spend": 830878, "biz_signups": 61066, "bd1_6": 14528.0}, {"month": "2026-03", "spend": 1023366, "biz_signups": 65259, "bd1_6": 15091.0}, {"month": "2026-04", "spend": 1321759, "biz_signups": 65011, "bd1_6": 14229.0}, {"month": "2026-05", "spend": 631202, "biz_signups": 32580, "bd1_6": 11268.0}, {"month": "2026-06", "spend": 689848, "biz_signups": 26916, "bd1_6": 9452.0}, {"month": "2026-07", "spend": 1074956, "biz_signups": 30173, "bd1_6": 9374.0}];
-const NBPS_DATA = [{"month": "2026-02", "spend": 826782, "biz_signups": 6595, "bd1_6": 939.0}, {"month": "2026-03", "spend": 902807, "biz_signups": 8744, "bd1_6": 902.0}, {"month": "2026-04", "spend": 1417876, "biz_signups": 8819, "bd1_6": 1144.0}, {"month": "2026-05", "spend": 462781, "biz_signups": 5229, "bd1_6": 706.0}, {"month": "2026-06", "spend": 418509, "biz_signups": 3727, "bd1_6": 444.0}, {"month": "2026-07", "spend": 1498780, "biz_signups": 7426, "bd1_6": 977.0}];
+const MONTHLY = [{"month": "2026-02", "spend": 1404025, "biz_signups": 67661, "bd1_6": 15467.0, "is_pct": 38.6, "cp_biz": 20.75, "cp_bd16": 90.78, "bd16_rate": 22.86}, {"month": "2026-03", "spend": 1670617, "biz_signups": 74003, "bd1_6": 15993.0, "is_pct": 38.4, "cp_biz": 22.57, "cp_bd16": 104.46, "bd16_rate": 21.61}, {"month": "2026-04", "spend": 2367196, "biz_signups": 73830, "bd1_6": 15373.0, "is_pct": 33.3, "cp_biz": 32.06, "cp_bd16": 153.98, "bd16_rate": 20.82}, {"month": "2026-05", "spend": 797192, "biz_signups": 37809, "bd1_6": 11974.0, "is_pct": 47.2, "cp_biz": 21.08, "cp_bd16": 66.58, "bd16_rate": 31.67}, {"month": "2026-06", "spend": 744817, "biz_signups": 30643, "bd1_6": 9896.0, "is_pct": 54.7, "cp_biz": 24.31, "cp_bd16": 75.26, "bd16_rate": 32.29}, {"month": "2026-07", "spend": 2061590, "biz_signups": 37599, "bd1_6": 10351.0, "is_pct": 41.6, "cp_biz": 54.83, "cp_bd16": 199.17, "bd16_rate": 27.53}];
 const GEO_ROWS = [{"geo": "ALL", "spend": 2061590, "biz_signups": 37599, "bd1_6": 10351.0, "cp_biz": 54.83, "cp_bd16": 199.17, "bd16_rate": 27.53, "prev_cp_biz": 24.31, "prev_cp_bd16": 75.26, "prev_bd16_rate": 32.29}];
+const BPS_DATA = [{"month": "2026-02", "spend": 280805, "biz_signups": 13532, "bd1_6": 3093.0, "is_pct": 67.6, "cp_biz": 20.75, "cp_bd16": 90.79, "bd16_rate": 22.86}, {"month": "2026-03", "spend": 334123, "biz_signups": 14801, "bd1_6": 3199.0, "is_pct": 68.0, "cp_biz": 22.57, "cp_bd16": 104.45, "bd16_rate": 21.61}, {"month": "2026-04", "spend": 473439, "biz_signups": 14766, "bd1_6": 3075.0, "is_pct": 61.5, "cp_biz": 32.06, "cp_bd16": 153.96, "bd16_rate": 20.82}, {"month": "2026-05", "spend": 159438, "biz_signups": 7562, "bd1_6": 2395.0, "is_pct": 71.4, "cp_biz": 21.08, "cp_bd16": 66.57, "bd16_rate": 31.67}, {"month": "2026-06", "spend": 148963, "biz_signups": 6129, "bd1_6": 1979.0, "is_pct": 73.5, "cp_biz": 24.3, "cp_bd16": 75.27, "bd16_rate": 32.29}, {"month": "2026-07", "spend": 412318, "biz_signups": 7520, "bd1_6": 2070.0, "is_pct": 69.5, "cp_biz": 54.83, "cp_bd16": 199.19, "bd16_rate": 27.53}];
+const NBPS_DATA = [{"month": "2026-02", "spend": 1123220, "biz_signups": 54129, "bd1_6": 12374.0, "is_pct": 17.8, "cp_biz": 20.75, "cp_bd16": 90.77, "bd16_rate": 22.86}, {"month": "2026-03", "spend": 1336494, "biz_signups": 59202, "bd1_6": 12794.0, "is_pct": 19.0, "cp_biz": 22.58, "cp_bd16": 104.46, "bd16_rate": 21.61}, {"month": "2026-04", "spend": 1893757, "biz_signups": 59064, "bd1_6": 12298.0, "is_pct": 20.0, "cp_biz": 32.06, "cp_bd16": 153.99, "bd16_rate": 20.82}, {"month": "2026-05", "spend": 637754, "biz_signups": 30247, "bd1_6": 9579.0, "is_pct": 22.3, "cp_biz": 21.08, "cp_bd16": 66.58, "bd16_rate": 31.67}, {"month": "2026-06", "spend": 595854, "biz_signups": 24514, "bd1_6": 7917.0, "is_pct": 23.7, "cp_biz": 24.31, "cp_bd16": 75.26, "bd16_rate": 32.3}, {"month": "2026-07", "spend": 1649272, "biz_signups": 30079, "bd1_6": 8281.0, "is_pct": 29.8, "cp_biz": 54.83, "cp_bd16": 199.16, "bd16_rate": 27.53}];
 
-// ── Channel filter ───────────────────────────────────────────────────────────
-let activeData = MONTHLY;
+let activeChannel = 'ALL';
 let effChart, bd16Chart, rateChart;
 
 function setChannel(ch) {
-  activeData = ch === 'BPS' ? BPS_DATA : ch === 'NBPS' ? NBPS_DATA : MONTHLY;
-  ['all','bps','nbps'].forEach(id => {
-    const btn = document.getElementById('btn-' + id);
-    const isActive = id === ch.toLowerCase();
-    btn.style.background = isActive ? '#0052CC' : '#fff';
-    btn.style.color = isActive ? '#fff' : '#374151';
-    btn.style.borderColor = isActive ? '#0052CC' : '#ddd';
+  activeChannel = ch;
+  ['ALL','BPS','NBPS'].forEach(c => {
+    const btn = document.getElementById('btn-' + c.toLowerCase());
+    if (btn) {
+      btn.style.background = c === ch ? '#0052CC' : '#fff';
+      btn.style.color = c === ch ? '#fff' : '#374151';
+      btn.style.borderColor = c === ch ? '#0052CC' : '#ddd';
+    }
   });
-  const d = activeData;
-  effChart.data.labels = d.map(r => r.month);
-  effChart.data.datasets[0].data = d.map(r => r.spend);
-  effChart.data.datasets[1].data = d.map(r => r.cp_biz || (r.biz_signups > 0 ? r.spend / r.biz_signups : null));
-  effChart.data.datasets[2].data = d.map(r => r.cp_bd16 || (r.bd1_6 > 0 ? r.spend / r.bd1_6 : null));
-  effChart.update();
-  bd16Chart.data.labels = d.map(r => r.month);
-  bd16Chart.data.datasets[0].data = d.map(r => r.spend);
-  bd16Chart.data.datasets[1].data = d.map(r => r.bd1_6);
-  bd16Chart.update();
-  rateChart.data.labels = d.map(r => r.month);
-  rateChart.data.datasets[0].data = d.map(r => r.bd16_rate || (r.biz_signups > 0 ? r.bd1_6 / r.biz_signups * 100 : null));
-  rateChart.update();
+  const data = ch === 'BPS' ? BPS_DATA : ch === 'NBPS' ? NBPS_DATA : MONTHLY;
+  const sp = data.map(d => d.spend);
+  const cb = data.map(d => d.cp_biz);
+  const cbd = data.map(d => d.cp_bd16);
+  const bd = data.map(d => d.bd1_6);
+  const rt = data.map(d => d.bd16_rate);
+  if (effChart) {
+    effChart.data.datasets[0].data = sp;
+    effChart.data.datasets[1].data = cb;
+    effChart.data.datasets[2].data = cbd;
+    effChart.update();
+  }
+  if (bd16Chart) {
+    bd16Chart.data.datasets[0].data = sp;
+    bd16Chart.data.datasets[1].data = bd;
+    bd16Chart.update();
+  }
+  if (rateChart) {
+    rateChart.data.datasets[0].data = rt;
+    rateChart.update();
+  }
+  // Update IS x Spend scatter
+  if (window.isChart) {
+    const newScatter = data
+      .filter(d => d.is_pct !== null && d.is_pct !== undefined)
+      .map(d => ({ x: d.spend, y: d.is_pct, month: d.month }));
+    window.isChart.data.datasets[0].data = newScatter;
+    window.isChart.data.datasets[0].backgroundColor = newScatter.map((_, i) => `hsl(${200 + i * 25}, 70%, 50%)`);
+    window.isChart.update();
+  }
+  // Update raw table
   const tbody = document.getElementById('raw-table-body');
-  if (tbody) tbody.innerHTML = [...d].reverse().map(r => {
-    const cpB = r.biz_signups > 0 ? '$' + Math.round(r.spend / r.biz_signups).toLocaleString() : 'N/A';
-    const cpD = r.bd1_6 > 0 ? '$' + Math.round(r.spend / r.bd1_6).toLocaleString() : 'N/A';
-    const rt = r.biz_signups > 0 ? (r.bd1_6 / r.biz_signups * 100).toFixed(1) + '%' : 'N/A';
-    return '<tr><td>' + r.month + '</td><td>$' + Math.round(r.spend).toLocaleString() + '</td><td>' + r.biz_signups.toLocaleString() + '</td><td>' + Math.round(r.bd1_6).toLocaleString() + '</td><td>' + cpB + '</td><td>' + cpD + '</td><td>' + rt + '</td></tr>';
-  }).join('');
+  if (tbody) {
+    tbody.innerHTML = data.map(d => `<tr>
+      <td>${d.month}</td>
+      <td>$${(d.spend/1000).toFixed(0)}K</td>
+      <td>${(d.biz_signups||0).toLocaleString()}</td>
+      <td>${(d.bd1_6||0).toLocaleString()}</td>
+      <td>${d.cp_biz ? '$'+d.cp_biz.toFixed(0) : 'N/A'}</td>
+      <td>${d.cp_bd16 ? '$'+d.cp_bd16.toFixed(0) : 'N/A'}</td>
+      <td>${d.bd16_rate ? d.bd16_rate.toFixed(1)+'%' : 'N/A'}</td>
+    </tr>`).join('');
+  }
 }
 
 const months = MONTHLY.map(d => d.month);
@@ -299,7 +329,59 @@ effChart = new Chart(document.getElementById('efficiencyChart'), {
   }
 });
 
-// BD1-6 rate chart
+// IS x Spend scatter chart
+const isSpendData = MONTHLY
+  .filter(d => d.is_pct !== null && d.is_pct !== undefined)
+  .map(d => ({ x: d.spend, y: d.is_pct, month: d.month }));
+
+window.isChart = new Chart(document.getElementById('isSpendChart'), {
+  type: 'scatter',
+  plugins: [ChartDataLabels],
+  data: {
+    datasets: [{
+      label: 'IS% vs Spend',
+      data: isSpendData,
+      backgroundColor: isSpendData.map((_, i) => `hsl(${200 + i * 25}, 70%, 50%)`),
+      pointRadius: 8,
+      pointHoverRadius: 10,
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: {
+      tooltip: {
+        callbacks: {
+          label: ctx => `${ctx.raw.month}: $${(ctx.raw.x/1000).toFixed(0)}K spend | ${ctx.raw.y.toFixed(1)}% IS`
+        }
+      },
+      legend: { display: false },
+      datalabels: {
+        display: true,
+        align: 'top',
+        anchor: 'end',
+        formatter: (val) => val.month,
+        font: { size: 11, weight: '600' },
+        color: '#374151',
+        offset: 4,
+      }
+    },
+    scales: {
+      x: {
+        title: { display: true, text: 'Monthly Spend ($)', font: { size: 12 } },
+        ticks: { callback: v => '$' + (v/1000).toFixed(0) + 'K' },
+        grid: { color: '#f0f0f0' }
+      },
+      y: {
+        title: { display: true, text: 'Impression Share (%)', font: { size: 12 } },
+        ticks: { callback: v => v + '%' },
+        min: 0, max: 100,
+        grid: { color: '#f0f0f0' }
+      }
+    }
+  }
+});
+
+// BD1-6 over Spend chart
 bd16Chart = new Chart(document.getElementById('bd16SpendChart'), {
   type: 'bar',
   data: {

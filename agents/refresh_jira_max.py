@@ -64,7 +64,8 @@ def pull_jira_spend_api(service, customer_id):
     print(f"Pulling Jira spend from Google Ads API ({START_6M} to {END})...")
     rows = list(service.search(customer_id=customer_id, query=f"""
         SELECT segments.month, campaign.name,
-               metrics.cost_micros, metrics.clicks, metrics.impressions
+               metrics.cost_micros, metrics.clicks, metrics.impressions,
+               metrics.search_impression_share
         FROM campaign
         WHERE segments.date BETWEEN '{START_6M}' AND '{END}'
         AND campaign.name LIKE '%P:jira%'
@@ -76,7 +77,8 @@ def pull_jira_spend_api(service, customer_id):
     EXCLUDE_SIGNALS = ["experiment", "test", "pilot", "chatgpt",
                        "display", "social", "video", "youtube", "gmail"]
 
-    agg = defaultdict(lambda: {"spend": 0.0, "clicks": 0, "impressions": 0})
+    agg = defaultdict(lambda: {"spend": 0.0, "clicks": 0, "impressions": 0,
+                                "is_weighted": 0.0, "is_imp": 0})
     for r in rows:
         name = r.campaign.name.lower()
         if any(x in name for x in ["experiment", "test", "pilot", "chatgpt"]):
@@ -86,17 +88,25 @@ def pull_jira_spend_api(service, customer_id):
         geo = geo_match.group(1).upper() if geo_match else "OTHER"
         key = (m, geo)
         spend = r.metrics.cost_micros / 1_000_000
+        imp = r.metrics.impressions
+        is_val = r.metrics.search_impression_share
         agg[key]["spend"] += spend
         agg[key]["clicks"] += r.metrics.clicks
-        agg[key]["impressions"] += r.metrics.impressions
+        agg[key]["impressions"] += imp
+        # Impressions-weighted IS
+        if 0 < is_val <= 1:
+            agg[key]["is_weighted"] += is_val * imp
+            agg[key]["is_imp"] += imp
 
     records = []
     for (m, geo), d in sorted(agg.items()):
+        is_pct = round(d["is_weighted"] / d["is_imp"] * 100, 1) if d["is_imp"] > 0 else None
         records.append({
             "month": m, "geo": geo,
             "spend": round(d["spend"], 2),
             "clicks": d["clicks"],
             "impressions": d["impressions"],
+            "is_pct": is_pct,
         })
     print(f"  {len(records)} geo-month rows from Ads API")
     return records
@@ -188,11 +198,16 @@ def join_spend_and_funnel(spend_records, funnel_records):
         month_funnel[r["month"]]["bd1_6"] += r["bd1_6"]
 
     # Aggregate spend by month (all geos combined) for monthly totals
-    month_spend = defaultdict(lambda: {"spend": 0.0, "clicks": 0, "impressions": 0})
+    month_spend = defaultdict(lambda: {"spend": 0.0, "clicks": 0, "impressions": 0,
+                                       "is_weighted": 0.0, "is_imp": 0})
     for r in spend_records:
         month_spend[r["month"]]["spend"] += r["spend"]
         month_spend[r["month"]]["clicks"] += r["clicks"]
         month_spend[r["month"]]["impressions"] += r["impressions"]
+        if r.get("is_pct") is not None:
+            imp = r["impressions"]
+            month_spend[r["month"]]["is_weighted"] += r["is_pct"] * imp
+            month_spend[r["month"]]["is_imp"] += imp
 
     # Build joined monthly records
     all_months = sorted(set(
@@ -200,14 +215,17 @@ def join_spend_and_funnel(spend_records, funnel_records):
     ))
     records = []
     for m in all_months:
-        sp = month_spend.get(m, {"spend": 0.0, "clicks": 0, "impressions": 0})
+        sp = month_spend.get(m, {"spend": 0.0, "clicks": 0, "impressions": 0,
+                                  "is_weighted": 0.0, "is_imp": 0})
         fn = month_funnel.get(m, {"biz_signups": 0, "bd1_6": 0.0})
+        is_pct = round(sp["is_weighted"] / sp["is_imp"], 1) if sp["is_imp"] > 0 else None
         records.append({
             "month": m,
             "geo": "ALL",
             "spend": round(sp["spend"], 2),
             "clicks": sp["clicks"],
             "impressions": sp["impressions"],
+            "is_pct": is_pct,
             "biz_signups": fn["biz_signups"],
             "bd1_6": round(fn["bd1_6"], 1),
         })
@@ -229,11 +247,14 @@ def agg_monthly(records):
         sp = d["spend"]
         biz = d["biz_signups"]
         bd = d["bd1_6"]
+        is_vals = [r.get("is_pct") for r in records if r["month"] == m and r.get("is_pct")]
+        is_avg = round(sum(is_vals) / len(is_vals), 1) if is_vals else None
         out.append({
             "month": m,
             "spend": round(sp),
             "biz_signups": biz,
             "bd1_6": round(bd, 1),
+            "is_pct": is_avg,
             "cp_biz": round(sp / biz, 2) if biz > 0 else None,
             "cp_bd16": round(sp / bd, 2) if bd > 0 else None,
             "bd16_rate": round(bd / biz * 100, 2) if biz > 0 else None,
@@ -279,7 +300,7 @@ def agg_by_geo(records):
     return out, cur, prev
 
 # ── HTML builder ─────────────────────────────────────────────────────────────
-def build_html(records, monthly, geo_rows, cur_month, prev_month):
+def build_html(records, monthly, geo_rows, cur_month, prev_month, bps_monthly=None, nbps_monthly=None):
     total_spend = sum(r["spend"] for r in records)
     total_biz = sum(r["biz_signups"] for r in records)
     total_bd16 = sum(r["bd1_6"] for r in records)
@@ -306,6 +327,7 @@ def build_html(records, monthly, geo_rows, cur_month, prev_month):
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Jira Paid Efficiency Dashboard</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
   <style>
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -364,6 +386,13 @@ def build_html(records, monthly, geo_rows, cur_month, prev_month):
   <div style="font-size:12px;opacity:0.7">Generated {GENERATED}</div>
 </div>
 
+<div style="background:#f8fafc;border-bottom:1px solid #e5e7eb;padding:10px 32px;display:flex;align-items:center;gap:8px;">
+  <span style="font-size:12px;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">Channel</span>
+  <button id="btn-all" onclick="setChannel('ALL')" style="padding:4px 14px;border-radius:20px;border:1.5px solid #0052CC;background:#0052CC;color:#fff;font-size:12px;font-weight:600;cursor:pointer">All</button>
+  <button id="btn-bps" onclick="setChannel('BPS')" style="padding:4px 14px;border-radius:20px;border:1.5px solid #ddd;background:#fff;color:#374151;font-size:12px;font-weight:600;cursor:pointer">BPS</button>
+  <button id="btn-nbps" onclick="setChannel('NBPS')" style="padding:4px 14px;border-radius:20px;border:1.5px solid #ddd;background:#fff;color:#374151;font-size:12px;font-weight:600;cursor:pointer">NBPS</button>
+</div>
+
 <div class="cards">
   <div class="card blue">
     <div class="card-label">6M Total Spend</div>
@@ -401,6 +430,12 @@ def build_html(records, monthly, geo_rows, cur_month, prev_month):
   <h2>Monthly Efficiency Trend</h2>
   <div class="desc">CP Biz Sign-up and CP BD1-6 over spend. Lower CP = more efficient. BD1-6 / Biz Sign-up rate (right axis) shows funnel quality.</div>
   <div class="chart-wrap"><canvas id="efficiencyChart"></canvas></div>
+</div>
+
+<div class="section">
+  <h2>IS x Spend Efficiency</h2>
+  <div class="desc">Each point = one month. X-axis = spend, Y-axis = Impression Share %. Shows what IS level a given spend level buys. Curve flattening = diminishing returns.</div>
+  <div class="chart-wrap"><canvas id="isSpendChart"></canvas></div>
 </div>
 
 <div class="section">
@@ -487,6 +522,8 @@ def build_html(records, monthly, geo_rows, cur_month, prev_month):
 
     monthly_json = json.dumps(monthly)
     geo_json = json.dumps(geo_rows)
+    bps_json = json.dumps(bps_monthly or [])
+    nbps_json = json.dumps(nbps_monthly or [])
 
     html += f"""    </tbody>
   </table>
@@ -497,6 +534,66 @@ def build_html(records, monthly, geo_rows, cur_month, prev_month):
 <script>
 const MONTHLY = {monthly_json};
 const GEO_ROWS = {geo_json};
+const BPS_DATA = {bps_json};
+const NBPS_DATA = {nbps_json};
+
+let activeChannel = 'ALL';
+let effChart, bd16Chart, rateChart;
+
+function setChannel(ch) {{
+  activeChannel = ch;
+  ['ALL','BPS','NBPS'].forEach(c => {{
+    const btn = document.getElementById('btn-' + c.toLowerCase());
+    if (btn) {{
+      btn.style.background = c === ch ? '#0052CC' : '#fff';
+      btn.style.color = c === ch ? '#fff' : '#374151';
+      btn.style.borderColor = c === ch ? '#0052CC' : '#ddd';
+    }}
+  }});
+  const data = ch === 'BPS' ? BPS_DATA : ch === 'NBPS' ? NBPS_DATA : MONTHLY;
+  const sp = data.map(d => d.spend);
+  const cb = data.map(d => d.cp_biz);
+  const cbd = data.map(d => d.cp_bd16);
+  const bd = data.map(d => d.bd1_6);
+  const rt = data.map(d => d.bd16_rate);
+  if (effChart) {{
+    effChart.data.datasets[0].data = sp;
+    effChart.data.datasets[1].data = cb;
+    effChart.data.datasets[2].data = cbd;
+    effChart.update();
+  }}
+  if (bd16Chart) {{
+    bd16Chart.data.datasets[0].data = sp;
+    bd16Chart.data.datasets[1].data = bd;
+    bd16Chart.update();
+  }}
+  if (rateChart) {{
+    rateChart.data.datasets[0].data = rt;
+    rateChart.update();
+  }}
+  // Update IS x Spend scatter
+  if (window.isChart) {{
+    const newScatter = data
+      .filter(d => d.is_pct !== null && d.is_pct !== undefined)
+      .map(d => ({{ x: d.spend, y: d.is_pct, month: d.month }}));
+    window.isChart.data.datasets[0].data = newScatter;
+    window.isChart.data.datasets[0].backgroundColor = newScatter.map((_, i) => `hsl(${{200 + i * 25}}, 70%, 50%)`);
+    window.isChart.update();
+  }}
+  // Update raw table
+  const tbody = document.getElementById('raw-table-body');
+  if (tbody) {{
+    tbody.innerHTML = data.map(d => `<tr>
+      <td>${{d.month}}</td>
+      <td>$${{(d.spend/1000).toFixed(0)}}K</td>
+      <td>${{(d.biz_signups||0).toLocaleString()}}</td>
+      <td>${{(d.bd1_6||0).toLocaleString()}}</td>
+      <td>${{d.cp_biz ? '$'+d.cp_biz.toFixed(0) : 'N/A'}}</td>
+      <td>${{d.cp_bd16 ? '$'+d.cp_bd16.toFixed(0) : 'N/A'}}</td>
+      <td>${{d.bd16_rate ? d.bd16_rate.toFixed(1)+'%' : 'N/A'}}</td>
+    </tr>`).join('');
+  }}
+}}
 
 const months = MONTHLY.map(d => d.month);
 const cpBiz = MONTHLY.map(d => d.cp_biz);
@@ -505,7 +602,7 @@ const spend = MONTHLY.map(d => d.spend);
 const rate = MONTHLY.map(d => d.bd16_rate);
 
 // Efficiency trend chart
-new Chart(document.getElementById('efficiencyChart'), {{
+effChart = new Chart(document.getElementById('efficiencyChart'), {{
   type: 'bar',
   data: {{
     labels: months,
@@ -538,8 +635,60 @@ new Chart(document.getElementById('efficiencyChart'), {{
   }}
 }});
 
-// BD1-6 rate chart
-new Chart(document.getElementById('bd16SpendChart'), {{
+// IS x Spend scatter chart
+const isSpendData = MONTHLY
+  .filter(d => d.is_pct !== null && d.is_pct !== undefined)
+  .map(d => ({{ x: d.spend, y: d.is_pct, month: d.month }}));
+
+window.isChart = new Chart(document.getElementById('isSpendChart'), {{
+  type: 'scatter',
+  plugins: [ChartDataLabels],
+  data: {{
+    datasets: [{{
+      label: 'IS% vs Spend',
+      data: isSpendData,
+      backgroundColor: isSpendData.map((_, i) => `hsl(${{200 + i * 25}}, 70%, 50%)`),
+      pointRadius: 8,
+      pointHoverRadius: 10,
+    }}]
+  }},
+  options: {{
+    responsive: true, maintainAspectRatio: false,
+    plugins: {{
+      tooltip: {{
+        callbacks: {{
+          label: ctx => `${{ctx.raw.month}}: $${{(ctx.raw.x/1000).toFixed(0)}}K spend | ${{ctx.raw.y.toFixed(1)}}% IS`
+        }}
+      }},
+      legend: {{ display: false }},
+      datalabels: {{
+        display: true,
+        align: 'top',
+        anchor: 'end',
+        formatter: (val) => val.month,
+        font: {{ size: 11, weight: '600' }},
+        color: '#374151',
+        offset: 4,
+      }}
+    }},
+    scales: {{
+      x: {{
+        title: {{ display: true, text: 'Monthly Spend ($)', font: {{ size: 12 }} }},
+        ticks: {{ callback: v => '$' + (v/1000).toFixed(0) + 'K' }},
+        grid: {{ color: '#f0f0f0' }}
+      }},
+      y: {{
+        title: {{ display: true, text: 'Impression Share (%)', font: {{ size: 12 }} }},
+        ticks: {{ callback: v => v + '%' }},
+        min: 0, max: 100,
+        grid: {{ color: '#f0f0f0' }}
+      }}
+    }}
+  }}
+}});
+
+// BD1-6 over Spend chart
+bd16Chart = new Chart(document.getElementById('bd16SpendChart'), {{
   type: 'bar',
   data: {{
     labels: months,
@@ -569,7 +718,7 @@ new Chart(document.getElementById('bd16SpendChart'), {{
   }}
 }});
 
-new Chart(document.getElementById('rateChart'), {{
+rateChart = new Chart(document.getElementById('rateChart'), {{
   type: 'line',
   data: {{
     labels: months,
@@ -634,7 +783,37 @@ def main():
     monthly = agg_monthly(records)
     geo_rows, cur_month, prev_month = agg_by_geo(records)
 
-    html = build_html(records, monthly, geo_rows, cur_month, prev_month)
+    # BPS/NBPS split from Socrates seed (channel-level)
+    BPS_SEED = [
+        {"month": "2026-02", "spend": 280805, "biz_signups": 13532, "bd1_6": 3093.0, "is_pct": 67.6},
+        {"month": "2026-03", "spend": 334123, "biz_signups": 14801, "bd1_6": 3199.0, "is_pct": 68.0},
+        {"month": "2026-04", "spend": 473439, "biz_signups": 14766, "bd1_6": 3075.0, "is_pct": 61.5},
+        {"month": "2026-05", "spend": 159438, "biz_signups": 7562, "bd1_6": 2395.0, "is_pct": 71.4},
+        {"month": "2026-06", "spend": 148963, "biz_signups": 6129, "bd1_6": 1979.0, "is_pct": 73.5},
+        {"month": "2026-07", "spend": 412318, "biz_signups": 7520, "bd1_6": 2070.0, "is_pct": 69.5},
+    ]
+    NBPS_SEED = [
+        {"month": "2026-02", "spend": 1123220, "biz_signups": 54129, "bd1_6": 12374.0, "is_pct": 17.8},
+        {"month": "2026-03", "spend": 1336494, "biz_signups": 59202, "bd1_6": 12794.0, "is_pct": 19.0},
+        {"month": "2026-04", "spend": 1893757, "biz_signups": 59064, "bd1_6": 12298.0, "is_pct": 20.0},
+        {"month": "2026-05", "spend": 637754, "biz_signups": 30247, "bd1_6": 9579.0, "is_pct": 22.3},
+        {"month": "2026-06", "spend": 595854, "biz_signups": 24514, "bd1_6": 7917.0, "is_pct": 23.7},
+        {"month": "2026-07", "spend": 1649272, "biz_signups": 30079, "bd1_6": 8281.0, "is_pct": 29.8},
+    ]
+    def _enrich(seed):
+        out = []
+        for r in seed:
+            sp, biz, bd = r["spend"], r["biz_signups"], r["bd1_6"]
+            out.append({**r,
+                "cp_biz": round(sp/biz, 2) if biz else None,
+                "cp_bd16": round(sp/bd, 2) if bd else None,
+                "bd16_rate": round(bd/biz*100, 2) if biz else None,
+            })
+        return out
+    bps_monthly = _enrich(BPS_SEED)
+    nbps_monthly = _enrich(NBPS_SEED)
+
+    html = build_html(records, monthly, geo_rows, cur_month, prev_month, bps_monthly, nbps_monthly)
 
     with open(OUTPUT_FILE, "w") as f:
         f.write(html)

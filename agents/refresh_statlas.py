@@ -160,16 +160,18 @@ def pull_tmp_monthly(service, customer_id):
 
 
 def pull_geo_monthly(service, customer_id):
-    print("Pulling TMP IS by geo (13 months, campaign level)...")
+    print("Pulling TMP IS by geo (13 months, ad group level, S:brand-trademark filter)...")
     import re as _re
     rows = run_query(service, customer_id, f"""
-        SELECT segments.month, campaign.name,
+        SELECT segments.month, campaign.name, ad_group.name,
                metrics.search_impression_share, metrics.impressions,
                metrics.cost_micros, metrics.clicks
-        FROM campaign
+        FROM ad_group
         WHERE segments.date BETWEEN '{START_13M}' AND '{END}'
         AND campaign.name LIKE '%S:brand-trademark%'
+        AND ad_group.name LIKE '%S:brand-trademark%'
         AND campaign.name NOT LIKE '%trello%'
+        AND ad_group.name NOT LIKE '%trello%'
         AND metrics.impressions > 0
         ORDER BY segments.month
     """)
@@ -897,7 +899,7 @@ function buildGeoTabs() {{
   wrap.innerHTML = TOP_GEOS.map(g =>
     `<div class="tab${{g === selectedGeo ? ' active' : ''}}" onclick="selectGeo('${{g}}')">${{g}}</div>`
   ).join('') +
-  '<div class="tab" onclick="selectGeo(\'ALL\')">All Geos</div>';
+  `<div class="tab${{selectedGeo === 'ALL' ? ' active' : ''}}" onclick="selectGeo('ALL')">All Geos</div>`;
 }}
 
 function selectGeo(geo) {{
